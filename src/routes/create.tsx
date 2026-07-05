@@ -193,7 +193,11 @@ function CreatePage() {
                     placeholder="예: 성수동 카페"
                     onChange={(e) => setKeywordInput(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
+                      if (
+                        e.key === "Enter" &&
+                        !e.nativeEvent.isComposing &&
+                        e.keyCode !== 229
+                      ) {
                         e.preventDefault();
                         addKeyword();
                       }
