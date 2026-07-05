@@ -54,6 +54,11 @@ export async function publishContent(payload: {
   return data as { ok: boolean };
 }
 
+export async function listContent() {
+  const { data } = await api.get("/api/content");
+  return data as GeneratedContent[];
+}
+
 export async function pingBackend(): Promise<boolean> {
   try {
     await api.get("/", { timeout: 2000 });
