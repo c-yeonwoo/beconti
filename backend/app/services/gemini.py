@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 
 from ..config import settings
@@ -98,14 +99,28 @@ def generate_draft(image_paths: list[str], keywords: list[str], tone: str) -> di
         parts.append(types.Part.from_bytes(data=data, mime_type=mime))
     parts.append(_build_prompt(keywords, tone))
 
-    resp = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=parts,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.9,
-        ),
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        temperature=0.9,
     )
+
+    # 2.5 모델은 과부하 시 503 UNAVAILABLE 을 자주 반환 → 지수 백오프 재시도
+    resp = None
+    last_err: Exception | None = None
+    for attempt in range(5):
+        try:
+            resp = client.models.generate_content(
+                model=settings.gemini_model, contents=parts, config=config
+            )
+            break
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+    if resp is None:
+        raise RuntimeError(f"Gemini 호출 실패(과부하 지속): {last_err}")
 
     data = _parse_json(resp.text or "")
     data.setdefault("title", ", ".join(keywords) or "제목 없음")

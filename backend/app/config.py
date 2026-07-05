@@ -21,7 +21,7 @@ def _bool(name: str, default: bool) -> bool:
 class Settings:
     def __init__(self) -> None:
         self.gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-pro").strip()
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         self.anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5").strip()
