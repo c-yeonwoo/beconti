@@ -270,6 +270,7 @@ function ResultView({
   result: GeneratedContent | null;
   setResult: (r: GeneratedContent) => void;
 }) {
+  const navigate = useNavigate();
   const safe = useMemo<GeneratedContent>(
     () =>
       result ?? {
