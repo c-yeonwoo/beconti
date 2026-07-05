@@ -46,11 +46,11 @@ export function AppSidebar() {
       <SidebarHeader className="border-b px-4 py-4">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-md bg-primary text-primary-foreground grid place-items-center font-bold">
-            M
+            B
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">Marketing Auto</span>
-            <span className="text-xs text-muted-foreground">1인 자동화</span>
+            <span className="text-sm font-semibold">beconti</span>
+            <span className="text-xs text-muted-foreground">1인 콘텐츠 자동화</span>
           </div>
         </div>
       </SidebarHeader>

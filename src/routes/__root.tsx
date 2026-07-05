@@ -80,10 +80,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Marketing Auto — 1인 콘텐츠 자동화" },
-      { name: "description", content: "사진과 영상 한 벌로 블로그와 숏폼을 동시에 생성하고 다중 플랫폼에 자동 배포하는 마케팅 자동화 대시보드" },
-      { name: "author", content: "Marketing Auto" },
-      { property: "og:title", content: "Marketing Auto — 1인 콘텐츠 자동화" },
+      { title: "beconti — 1인 콘텐츠 자동화" },
+      { name: "description", content: "사진과 영상 한 벌로 블로그와 숏폼을 동시에 생성하고 다중 플랫폼에 자동 배포하는 beconti 마케팅 자동화 대시보드" },
+      { name: "author", content: "beconti" },
+      { property: "og:title", content: "beconti — 1인 콘텐츠 자동화" },
       { property: "og:description", content: "블로그 · 숏폼 · 다중 플랫폼 배포 자동화" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -128,7 +128,7 @@ function RootComponent() {
             <header className="h-12 flex items-center border-b px-2 gap-2">
               <SidebarTrigger />
               <span className="text-sm font-medium text-muted-foreground">
-                Marketing Auto
+                beconti
               </span>
             </header>
             <main className="flex-1 min-w-0">

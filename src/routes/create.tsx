@@ -27,7 +27,7 @@ import {
 export const Route = createFileRoute("/create")({
   head: () => ({
     meta: [
-      { title: "콘텐츠 생성 · Marketing Auto" },
+      { title: "콘텐츠 생성 · beconti" },
       { name: "description", content: "미디어를 업로드해 블로그와 숏폼 콘텐츠 생성" },
     ],
   }),

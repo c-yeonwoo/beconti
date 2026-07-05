@@ -8,7 +8,7 @@ import { API_BASE_URL } from "@/lib/api";
 export const Route = createFileRoute("/settings")({
   head: () => ({
     meta: [
-      { title: "세팅 · Marketing Auto" },
+      { title: "세팅 · beconti" },
       { name: "description", content: "백엔드 및 플랫폼 계정 연결 상태" },
     ],
   }),
