@@ -80,14 +80,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "Marketing Auto — 1인 콘텐츠 자동화" },
+      { name: "description", content: "사진과 영상 한 벌로 블로그와 숏폼을 동시에 생성하고 다중 플랫폼에 자동 배포하는 마케팅 자동화 대시보드" },
+      { name: "author", content: "Marketing Auto" },
+      { property: "og:title", content: "Marketing Auto — 1인 콘텐츠 자동화" },
+      { property: "og:description", content: "블로그 · 숏폼 · 다중 플랫폼 배포 자동화" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
@@ -122,8 +121,23 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <SidebarProvider>
+        <div className="min-h-screen flex w-full bg-background">
+          <AppSidebar />
+          <div className="flex-1 flex flex-col min-w-0">
+            <header className="h-12 flex items-center border-b px-2 gap-2">
+              <SidebarTrigger />
+              <span className="text-sm font-medium text-muted-foreground">
+                Marketing Auto
+              </span>
+            </header>
+            <main className="flex-1 min-w-0">
+              <Outlet />
+            </main>
+          </div>
+        </div>
+      </SidebarProvider>
+      <Toaster />
     </QueryClientProvider>
   );
 }
