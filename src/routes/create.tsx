@@ -381,10 +381,14 @@ function ResultView({
           </div>
 
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" className="flex-1">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => toast.success("초안이 저장되었습니다", { description: "생성 시 서버에 자동 저장됩니다." })}
+            >
               <Save className="h-4 w-4" /> 저장
             </Button>
-            <Button className="flex-1">
+            <Button className="flex-1" onClick={() => navigate({ to: "/publish" })}>
               <Send className="h-4 w-4" /> 배포 관리로
             </Button>
           </div>
