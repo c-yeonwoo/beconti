@@ -15,7 +15,7 @@ import { Send } from "lucide-react";
 export const Route = createFileRoute("/publish")({
   head: () => ({
     meta: [
-      { title: "배포 관리 · Marketing Auto" },
+      { title: "배포 관리 · beconti" },
       { name: "description", content: "플랫폼별 배포 상태 및 재시도" },
     ],
   }),

@@ -7,7 +7,7 @@ import { Sparkles, CheckCircle2, XCircle, Clock, ArrowRight } from "lucide-react
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "대시보드 · Marketing Auto" },
+      { title: "대시보드 · beconti" },
       { name: "description", content: "생성 및 배포 상태 요약 대시보드" },
     ],
   }),

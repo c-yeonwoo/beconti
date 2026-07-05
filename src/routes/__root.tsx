@@ -128,7 +128,7 @@ function RootComponent() {
             <header className="h-12 flex items-center border-b px-2 gap-2">
               <SidebarTrigger />
               <span className="text-sm font-medium text-muted-foreground">
-                Marketing Auto
+                beconti
               </span>
             </header>
             <main className="flex-1 min-w-0">
