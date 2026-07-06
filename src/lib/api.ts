@@ -64,6 +64,27 @@ export async function listContent() {
   return data as GeneratedContent[];
 }
 
+export interface ComplianceCheck {
+  label: string;
+  ok: boolean;
+}
+export interface ComplianceResult {
+  checks: ComplianceCheck[];
+  passed: number;
+  total: number;
+}
+
+export async function checkCompliance(payload: {
+  body: string;
+  keywords: string[];
+  requiredHashtags: string[];
+  guideline: string;
+  photoCount: number;
+}) {
+  const { data } = await api.post("/api/compliance", payload);
+  return data as ComplianceResult;
+}
+
 export async function makeVideo(contentId: string) {
   const { data } = await api.post(
     `/api/video/${contentId}`,

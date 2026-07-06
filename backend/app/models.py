@@ -57,3 +57,22 @@ class PublishResponse(BaseModel):
 
 def default_platform_status() -> dict[str, PublishStatus]:
     return {p: "idle" for p in ALL_PLATFORMS}
+
+
+class CompliancePayload(BaseModel):
+    body: str = ""
+    keywords: list[str] = []
+    requiredHashtags: list[str] = []
+    guideline: str = ""
+    photoCount: int = 0
+
+
+class ComplianceCheck(BaseModel):
+    label: str
+    ok: bool
+
+
+class ComplianceResult(BaseModel):
+    checks: list[ComplianceCheck]
+    passed: int
+    total: int

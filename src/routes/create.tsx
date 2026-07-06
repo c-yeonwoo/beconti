@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Upload,
@@ -11,6 +11,9 @@ import {
   Save,
   Send,
   Clapperboard,
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,9 +33,11 @@ import {
   generateContent,
   uploadMedia,
   makeVideo,
+  checkCompliance,
   type ContentType,
   type GeneratedContent,
   type ScriptLine,
+  type ComplianceResult,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/create")({
@@ -350,7 +355,14 @@ function CreatePage() {
           </Card>
         </div>
       ) : (
-        <ResultView result={result} setResult={setResult} />
+        <ResultView
+          result={result}
+          setResult={setResult}
+          keywords={keywords}
+          hashtags={hashtags}
+          guideline={guideline}
+          photoCount={media.length}
+        />
       )}
     </div>
   );
@@ -359,9 +371,17 @@ function CreatePage() {
 function ResultView({
   result,
   setResult,
+  keywords,
+  hashtags,
+  guideline,
+  photoCount,
 }: {
   result: GeneratedContent | null;
   setResult: (r: GeneratedContent) => void;
+  keywords: string[];
+  hashtags: string[];
+  guideline: string;
+  photoCount: number;
 }) {
   const navigate = useNavigate();
   const safe = useMemo<GeneratedContent>(
@@ -399,6 +419,25 @@ function ResultView({
     },
   });
 
+  const [compliance, setCompliance] = useState<ComplianceResult | null>(null);
+  const complianceMutation = useMutation({
+    mutationFn: () =>
+      checkCompliance({
+        body: safe.body,
+        keywords,
+        requiredHashtags: hashtags,
+        guideline,
+        photoCount,
+      }),
+    onSuccess: setCompliance,
+  });
+
+  // 결과가 처음 로드되면 자동 1회 검사
+  useEffect(() => {
+    if (safe.body) complianceMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
@@ -420,8 +459,62 @@ function ResultView({
               value={safe.body}
               onChange={(e) => setResult({ ...safe, body: e.target.value })}
               placeholder="AI가 작성한 본문이 여기에 표시됩니다"
-              className="min-h-[420px] font-mono text-sm"
+              className="min-h-[360px] font-mono text-sm"
             />
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ShieldCheck className="h-4 w-4" />
+                캠페인 준수 체크
+                {compliance && (
+                  <span
+                    className={cn(
+                      "text-xs font-normal",
+                      compliance.passed === compliance.total
+                        ? "text-green-600"
+                        : "text-amber-600",
+                    )}
+                  >
+                    {compliance.passed}/{compliance.total} 통과
+                  </span>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={complianceMutation.isPending}
+                onClick={() => complianceMutation.mutate()}
+              >
+                {complianceMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  "다시 검사"
+                )}
+              </Button>
+            </div>
+            {compliance ? (
+              <ul className="space-y-1">
+                {compliance.checks.map((c, i) => (
+                  <li key={i} className="flex items-center gap-2 text-xs">
+                    {c.ok ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    )}
+                    <span
+                      className={c.ok ? "text-muted-foreground" : "text-foreground"}
+                    >
+                      {c.label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">검사 중...</p>
+            )}
           </div>
         </CardContent>
       </Card>

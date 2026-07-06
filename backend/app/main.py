@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import init_db
-from .routers import content, generate, publish, upload, video
+from .routers import compliance, content, generate, publish, upload, video
 
 
 @asynccontextmanager
@@ -53,6 +53,7 @@ app.include_router(generate.router)
 app.include_router(publish.router)
 app.include_router(content.router)
 app.include_router(video.router)
+app.include_router(compliance.router)
 
 # 렌더된 MP4 등 정적 서빙 (프론트에서 재생) → http://localhost:8000/media/renders/<file>
 settings.ensure_dirs()
