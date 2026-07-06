@@ -50,6 +50,43 @@ async def _human_type(target, text: str) -> None:
             await asyncio.sleep(random.uniform(0.15, 0.5))
 
 
+def _md_to_plain(md: str) -> list[str]:
+    """마크다운을 SmartEditor 본문용 문단 리스트로 정리.
+
+    ## 소제목, **강조**, [사진 N] 표기 등을 눈에 거슬리지 않는 평문으로 변환.
+    빈 줄 기준으로 문단을 나눈다.
+    """
+    import re
+
+    lines: list[str] = []
+    for raw in md.splitlines():
+        line = raw.rstrip()
+        line = re.sub(r"^#{1,6}\s+", "", line)      # 헤딩 마커 제거 (# 뒤 공백일 때만 → 해시태그 보존)
+        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)  # 볼드 제거
+        line = re.sub(r"^[-*]\s+", "• ", line)         # 리스트 불릿
+        lines.append(line)
+    # 연속 빈 줄은 하나로
+    out: list[str] = []
+    for line in lines:
+        if line == "" and (not out or out[-1] == ""):
+            continue
+        out.append(line)
+    return out or [""]
+
+
+async def _fill_body(page, body_el, body: str) -> None:
+    """본문 영역에 포커스 후 문단 단위로 입력 (insert_text 기반, 안정적)."""
+    await body_el.click()
+    await asyncio.sleep(random.uniform(0.3, 0.7))
+    paragraphs = _md_to_plain(body)
+    for i, para in enumerate(paragraphs):
+        if para:
+            await page.keyboard.insert_text(para)
+        if i < len(paragraphs) - 1:
+            await page.keyboard.press("Enter")
+            await asyncio.sleep(random.uniform(0.02, 0.12))
+
+
 async def _dismiss_draft_popup(frame) -> None:
     try:
         btn = frame.locator(SEL_CANCEL_DRAFT).first
@@ -123,11 +160,8 @@ async def publish_naver_blog(title: str, body: str) -> PublishResult:
             await _human_type(title_el, title)
             await asyncio.sleep(random.uniform(0.5, 1.2))
 
-            body_el = frame.locator(SEL_BODY).first
-            await body_el.click()
-            await page.evaluate("(t) => navigator.clipboard.writeText(t)", body)
-            await asyncio.sleep(random.uniform(0.3, 0.8))
-            await page.keyboard.press(f"{'Meta' if _is_mac() else 'Control'}+V")
+            body_el = frame.locator(SEL_BODY).last
+            await _fill_body(page, body_el, body)
             await asyncio.sleep(random.uniform(1.0, 2.0))
 
             await page.screenshot(path=shot_path, full_page=False)
