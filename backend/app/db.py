@@ -150,6 +150,14 @@ def list_content(limit: int = 50) -> list[GeneratedContent]:
     return [_row_to_content(r) for r in rows]
 
 
+def update_content_fields(content_id: str, title: str, body: str, script: list[dict]) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE content SET title = ?, body = ?, script_json = ? WHERE id = ?",
+            (title, body, json.dumps(script, ensure_ascii=False), content_id),
+        )
+
+
 def update_video_url(content_id: str, url: str) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE content SET video_url = ? WHERE id = ?", (url, content_id))

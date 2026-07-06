@@ -43,6 +43,12 @@ class GeneratedContent(BaseModel):
     platformStatus: dict[str, PublishStatus]
 
 
+class UpdateContentPayload(BaseModel):
+    title: str = ""
+    body: str = ""
+    script: list[ScriptLine] = []
+
+
 class UploadResponse(BaseModel):
     mediaIds: list[str]
 

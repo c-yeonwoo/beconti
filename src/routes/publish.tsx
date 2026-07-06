@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -119,7 +119,13 @@ function PublishPage() {
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="font-medium max-w-[280px] truncate">
-                          {row.title || "(제목 없음)"}
+                          <Link
+                            to="/content/$id"
+                            params={{ id: row.id }}
+                            className="hover:underline text-primary"
+                          >
+                            {row.title || "(제목 없음)"}
+                          </Link>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {new Date(row.createdAt).toLocaleString("ko-KR")}

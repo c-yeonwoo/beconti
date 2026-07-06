@@ -65,6 +65,19 @@ export async function listContent() {
   return data as GeneratedContent[];
 }
 
+export async function getContentById(id: string) {
+  const { data } = await api.get(`/api/content/${id}`);
+  return data as GeneratedContent;
+}
+
+export async function updateContent(
+  id: string,
+  patch: { title: string; body: string; script: ScriptLine[] },
+) {
+  const { data } = await api.patch(`/api/content/${id}`, patch);
+  return data as GeneratedContent;
+}
+
 export interface ComplianceCheck {
   label: string;
   ok: boolean;
