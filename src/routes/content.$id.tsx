@@ -22,6 +22,8 @@ import {
   updateContent,
   regenerateContent,
   uploadMedia,
+  getDefaults,
+  CATEGORIES,
   type ContentType,
   type ScriptLine,
 } from "@/lib/api";
@@ -42,6 +44,7 @@ function ContentDetailPage() {
 
   const contentQ = useQuery({ queryKey: ["content", id], queryFn: () => getContentById(id) });
   const settingsQ = useQuery({ queryKey: ["settings", id], queryFn: () => getContentSettings(id) });
+  const defaultsQ = useQuery({ queryKey: ["defaults"], queryFn: getDefaults, staleTime: Infinity });
 
   // 결과(수동 편집)
   const [title, setTitle] = useState("");
@@ -56,7 +59,12 @@ function ContentDetailPage() {
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [placeName, setPlaceName] = useState("");
+  const [placeUrl, setPlaceUrl] = useState("");
   const [media, setMedia] = useState<MediaItem[]>([]);
+
+  const guidelinePlaceholder =
+    (contentType === "vlog" ? defaultsQ.data?.video : defaultsQ.data?.blog) ??
+    "비우면 유형별 기본 규칙이 적용됩니다.";
 
   useEffect(() => {
     const c = contentQ.data;
@@ -76,6 +84,7 @@ function ContentDetailPage() {
       setGuideline(s.guideline);
       setHashtags(s.requiredHashtags);
       setPlaceName(s.placeName);
+      setPlaceUrl(s.placeUrl);
       setMedia(s.media);
     }
   }, [settingsQ.data]);
@@ -99,6 +108,7 @@ function ContentDetailPage() {
         guideline,
         requiredHashtags: hashtags,
         placeName,
+        placeUrl,
         mediaIds: media.map((m) => m.mediaId),
       }),
     onSuccess: (u) => {
@@ -198,7 +208,14 @@ function ContentDetailPage() {
 
             <div className="space-y-2">
               <Label>카테고리</Label>
-              <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="예: 맛집" />
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger><SelectValue placeholder="카테고리 선택" /></SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -216,13 +233,18 @@ function ContentDetailPage() {
             <ChipField label="필수 해시태그" items={hashtags} setItems={setHashtags} value={tagInput} setValue={setTagInput} placeholder="예: 성수동카페" hash />
 
             <div className="space-y-2">
-              <Label>매장명 (지도)</Label>
+              <Label>매장명 (지도, 선택)</Label>
               <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="예: 스타벅스 강남대로점" />
             </div>
 
             <div className="space-y-2">
+              <Label>네이버 지도 링크 (선택)</Label>
+              <Input value={placeUrl} onChange={(e) => setPlaceUrl(e.target.value)} placeholder="링크 있으면 우선 사용, 없으면 매장명 검색" />
+            </div>
+
+            <div className="space-y-2">
               <Label>캠페인 가이드라인</Label>
-              <Textarea value={guideline} onChange={(e) => setGuideline(e.target.value)} className="min-h-[90px] text-sm" placeholder="비우면 유형별 기본 규칙" />
+              <Textarea value={guideline} onChange={(e) => setGuideline(e.target.value)} className="min-h-[110px] text-sm" placeholder={guidelinePlaceholder} />
             </div>
 
             <Button className="w-full" disabled={regenMut.isPending || media.length === 0} onClick={() => regenMut.mutate()}>

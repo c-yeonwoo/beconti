@@ -15,6 +15,7 @@ from pathlib import Path
 from ..config import settings
 
 W, H, FPS = 1080, 1920, 30
+MIN_TOTAL_SEC = 30.0  # 숏폼 최소 길이 (체험단 규칙: 30초 이상)
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}
 
 # 이모지/그림문자 제거 (자막 폰트에서 깨짐)
@@ -142,6 +143,13 @@ def render_ffmpeg(image_paths: list[str], script: list[dict], out_path: str) -> 
         raise ValueError("이미지가 없어 숏폼을 만들 수 없습니다.")
     lines = script or [{"caption": "", "time": ""}]
 
+    # 각 컷 길이 계산 후, 전체가 30초 미만이면 30초 이상이 되도록 균등 확대
+    durations = [_parse_duration(line.get("time", "")) for line in lines]
+    total = sum(durations) or 1.0
+    if total < MIN_TOTAL_SEC:
+        scale = MIN_TOTAL_SEC / total
+        durations = [d * scale for d in durations]
+
     with tempfile.TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
         # 이미지들을 표준 JPEG 로 정규화(HEIC 변환·방향 보정)
@@ -153,7 +161,7 @@ def render_ffmpeg(image_paths: list[str], script: list[dict], out_path: str) -> 
             cap_png = str(tmpd / f"cap_{i}.png")
             _make_caption_png(str(line.get("caption", "")), cap_png)
             seg = str(tmpd / f"seg_{i}.mp4")
-            _render_segment(img, cap_png, _parse_duration(line.get("time", "")), seg)
+            _render_segment(img, cap_png, round(durations[i], 2), seg)
             segments.append(seg)
 
         concat_txt = tmpd / "list.txt"

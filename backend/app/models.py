@@ -29,6 +29,7 @@ class GeneratePayload(BaseModel):
     guideline: str = ""                   # 붙여넣은 가이드라인. 비면 유형별 기본값 사용
     requiredHashtags: list[str] = []      # 필수 해시태그
     placeName: str = ""                   # 매장명(상호) — 네이버 장소 카드 삽입용
+    placeUrl: str = ""                    # (옵션) 네이버 지도 링크. 있으면 우선, 없으면 매장명 검색
     mediaIds: list[str] = []
     tone: str = ""                        # deprecated (하위호환용)
 

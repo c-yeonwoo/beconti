@@ -15,7 +15,8 @@ from ..db import (
     update_content_fields,
 )
 from ..models import GeneratedContent, GeneratePayload, ScriptLine, UpdateContentPayload
-from ..services.gemini import generate_draft
+from ..services.gemini import default_guideline, generate_draft
+from .generate import media_has_video
 
 router = APIRouter(prefix="/api", tags=["content"])
 
@@ -34,7 +35,14 @@ def _gen_params(payload: GeneratePayload) -> dict:
         "guideline": payload.guideline,
         "requiredHashtags": payload.requiredHashtags,
         "placeName": payload.placeName,
+        "placeUrl": payload.placeUrl,
     }
+
+
+@router.get("/defaults")
+def get_defaults() -> dict:
+    """유형별 기본 가이드라인 (프론트 placeholder 용)."""
+    return {"blog": default_guideline("place_review"), "video": default_guideline("vlog")}
 
 
 @router.get("/content", response_model=list[GeneratedContent])
@@ -76,6 +84,7 @@ def get_settings(content_id: str) -> dict:
         "guideline": gp.get("guideline", ""),
         "requiredHashtags": gp.get("requiredHashtags", []),
         "placeName": gp.get("placeName", ""),
+        "placeUrl": gp.get("placeUrl", ""),
         "media": [{"mediaId": m["id"], "url": _media_url(m["path"])} for m in infos],
     }
 
@@ -87,7 +96,8 @@ def regenerate(content_id: str, payload: GeneratePayload) -> GeneratedContent:
     if existing is None:
         raise HTTPException(status_code=404, detail="콘텐츠를 찾을 수 없습니다.")
 
-    paths = [p for (p, _m) in get_media_paths(payload.mediaIds)]
+    media = get_media_paths(payload.mediaIds)
+    paths = [p for (p, _m) in media]
     if not paths and payload.mediaIds:
         raise HTTPException(status_code=404, detail="mediaIds 에 해당하는 파일을 찾을 수 없습니다.")
 
@@ -98,6 +108,7 @@ def regenerate(content_id: str, payload: GeneratePayload) -> GeneratedContent:
         content_type=payload.contentType,
         guideline=payload.guideline,
         hashtags=payload.requiredHashtags,
+        has_video=media_has_video(media),
     )
     script = [
         ScriptLine(

@@ -48,25 +48,28 @@ def _build_prompt(
     content_type: str,
     guideline: str,
     hashtags: list[str],
+    has_video: bool,
 ) -> str:
     kw = ", ".join(keywords) if keywords else "(없음)"
     tags = " ".join(hashtags) if hashtags else "(지정 없음)"
     type_desc = CONTENT_TYPE_LABELS.get(content_type, CONTENT_TYPE_LABELS["place_review"])
-    is_video = content_type == "vlog"
-    focus = "숏폼 영상 대본" if is_video else "블로그 본문"
-    tail = (
-        "- 이 유형은 영상이 핵심입니다. script 를 8~12줄로 충실히 작성하고, body 는 요약 설명 2~3문장이면 됩니다."
-        if is_video
-        else "- script 는 위 사진으로 만들 15~30초 숏폼용 5~7줄로 작성하세요."
-    )
     n_note = (
         "첨부된 사진들은 업로드된 순서가 뒤죽박죽일 수 있습니다. "
         "각 사진의 내용을 먼저 파악한 뒤, 리뷰 흐름(도입→상세→마무리)에 가장 잘 맞도록 "
         "**사진의 노출 순서와 위치를 직접 계획**하세요."
     )
+    if has_video:
+        script_json = '  "script": [\n    {{"time": "0-3s", "caption": "자막(짧게)", "narration": "나레이션"}}\n  ]'
+        script_rule = (
+            "- 첨부된 영상들을 편집한 **30초 이상** 숏폼용으로 script 를 8~12줄 작성 "
+            "(배경음+자막 전제). caption/narration 에 이모지 금지."
+        )
+    else:
+        script_json = '  "script": []'
+        script_rule = "- 영상이 첨부되지 않았으므로 script 는 **반드시 빈 배열 [] 로** 두세요."
     return f"""당신은 체험단 리뷰에 능한 한국어 콘텐츠 작가입니다.
 {n_note}
-그 계획에 맞춰 {focus}을(를) 중심으로 작성하세요.
+그 계획에 맞춰 블로그 본문을 중심으로 작성하세요.
 
 - 카테고리: {category or "(미지정)"}
 - 콘텐츠 유형: {type_desc}
@@ -84,21 +87,18 @@ def _build_prompt(
 [금지]
 - 본문에 지도 링크·URL·"지도 위치 링크"·주소 텍스트를 넣지 마세요.
   위치/지도는 발행 시 별도의 장소 카드로 자동 첨부됩니다.
-- **이모지(😀🍽️✨ 등)를 절대 쓰지 마세요.** 특히 script 의 caption/narration 은
-  영상 자막에서 깨지므로 이모지 없이 순수 텍스트로만 작성하세요.
+- **이모지(😀🍽️✨ 등)를 절대 쓰지 마세요.**
 
 아래 JSON 형식으로만 응답하세요. 다른 설명 없이 JSON 만 출력합니다.
 
 {{
   "title": "클릭을 부르는 자연스러운 한국어 제목",
   "body": "마크다운 본문. 소제목(##)·문단 구성. 사진 위치마다 [사진 N] 을 독립된 줄에 표기.",
-  "script": [
-    {{"time": "0-3s", "caption": "화면 하단 자막(짧게)", "narration": "나레이션 대본 문장"}}
-  ]
+{script_json}
 }}
 
 - 필수 해시태그는 반드시 결과에 포함하세요.
-{tail}"""
+{script_rule}"""
 
 
 def _parse_json(text: str) -> dict:
@@ -115,7 +115,7 @@ def _parse_json(text: str) -> dict:
         raise
 
 
-def _stub(keywords: list[str], content_type: str, hashtags: list[str], n_images: int) -> dict:
+def _stub(keywords: list[str], content_type: str, hashtags: list[str], n_images: int, has_video: bool) -> dict:
     kw = ", ".join(keywords) if keywords else "샘플 키워드"
     tags = " ".join(hashtags) if hashtags else "#샘플태그"
     body = (
@@ -126,12 +126,15 @@ def _stub(keywords: list[str], content_type: str, hashtags: list[str], n_images:
         "## 상세\n\n[사진 1] 이 위치에 사진별 설명이 들어갑니다.\n\n"
         f"## 마무리\n\n방문을 고민 중이라면 참고가 되었길 바랍니다.\n\n{tags}"
     )
-    script = [
-        {"time": "0-3s", "caption": f"{kw} 다녀왔어요", "narration": f"오늘은 {kw}에 다녀왔습니다."},
-        {"time": "3-8s", "caption": "첫인상", "narration": "입구부터 분위기가 좋았어요."},
-        {"time": "8-15s", "caption": "하이라이트", "narration": "가장 인상 깊었던 부분을 소개할게요."},
-        {"time": "15-20s", "caption": "총평", "narration": "다시 방문할 의향 100%입니다."},
-    ]
+    script = (
+        [
+            {"time": "0-5s", "caption": f"{kw} 다녀왔어요", "narration": f"오늘은 {kw}에 다녀왔습니다."},
+            {"time": "5-15s", "caption": "하이라이트", "narration": "가장 인상 깊었던 부분입니다."},
+            {"time": "15-30s", "caption": "총평", "narration": "다시 방문할 의향 100%입니다."},
+        ]
+        if has_video
+        else []
+    )
     return {"title": f"{kw} 방문 후기", "body": body, "script": script}
 
 
@@ -142,10 +145,12 @@ def generate_draft(
     content_type: str = "place_review",
     guideline: str = "",
     hashtags: list[str] | None = None,
+    has_video: bool = False,
 ) -> dict:
     """이미지 경로 + 생성 옵션 → {title, body, script[]} dict 반환.
 
     guideline 이 비어 있으면 유형별 기본 가이드라인을 사용한다.
+    숏폼 대본(script)은 has_video=True(영상 첨부)일 때만 생성된다.
     """
     hashtags = hashtags or []
     content_type = TYPE_ALIASES.get(content_type, content_type)
@@ -153,7 +158,7 @@ def generate_draft(
     images = [p for p in image_paths if Path(p).suffix.lower() in _IMAGE_EXTS]
 
     if not settings.gemini_api_key:
-        return _stub(keywords, content_type, hashtags, len(images))
+        return _stub(keywords, content_type, hashtags, len(images), has_video)
 
     # 지연 import: 키 없는 환경에서 SDK 미설치여도 스텁 경로는 동작
     from google import genai
@@ -167,7 +172,7 @@ def generate_draft(
         suffix = Path(path).suffix.lower().lstrip(".")
         mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
         parts.append(types.Part.from_bytes(data=data, mime_type=mime))
-    parts.append(_build_prompt(keywords, category, content_type, guideline, hashtags))
+    parts.append(_build_prompt(keywords, category, content_type, guideline, hashtags, has_video))
 
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
@@ -196,4 +201,6 @@ def generate_draft(
     data.setdefault("title", ", ".join(keywords) or "제목 없음")
     data.setdefault("body", "")
     data.setdefault("script", [])
+    if not has_video:
+        data["script"] = []  # 영상 없으면 대본 미생성
     return data

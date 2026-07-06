@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
@@ -8,6 +9,16 @@ from ..models import GeneratePayload, GeneratedContent, ScriptLine, default_plat
 from ..services.gemini import generate_draft
 
 router = APIRouter(prefix="/api", tags=["generate"])
+
+VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
+
+
+def media_has_video(paths: list[tuple[str, str]]) -> bool:
+    """(path, mime) 목록에 영상이 하나라도 있으면 True."""
+    return any(
+        (mime or "").startswith("video/") or Path(p).suffix.lower() in VIDEO_EXTS
+        for p, mime in paths
+    )
 
 
 @router.post("/generate", response_model=GeneratedContent)
@@ -24,6 +35,7 @@ def generate(payload: GeneratePayload) -> GeneratedContent:
         content_type=payload.contentType,
         guideline=payload.guideline,
         hashtags=payload.requiredHashtags,
+        has_video=media_has_video(paths),
     )
 
     script = [
@@ -57,4 +69,5 @@ def _gen_params(payload: GeneratePayload) -> dict:
         "guideline": payload.guideline,
         "requiredHashtags": payload.requiredHashtags,
         "placeName": payload.placeName,
+        "placeUrl": payload.placeUrl,
     }

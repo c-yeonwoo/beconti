@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..db import (
     get_content,
+    get_content_gen_params,
     get_content_media_ids,
     get_content_place_name,
     get_media_paths,
@@ -31,8 +32,10 @@ async def publish(payload: PublishPayload) -> PublishResponse:
             media_ids = get_content_media_ids(payload.contentId)
             image_paths = [p for (p, _mime) in get_media_paths(media_ids)]
             place_name = get_content_place_name(payload.contentId)
+            place_url = get_content_gen_params(payload.contentId).get("placeUrl", "")
             result = await publish_naver_blog(
-                content.title, content.body, image_paths, place_name=place_name
+                content.title, content.body, image_paths,
+                place_name=place_name, place_url=place_url,
             )
             status = "success" if result.ok else "failed"
             update_platform_status(payload.contentId, platform, status)

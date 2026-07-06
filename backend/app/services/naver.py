@@ -230,16 +230,34 @@ async def _fill_body(page, frame, body: str, image_paths: list[str]) -> int:
     return inserted
 
 
-async def _insert_place(page, frame, place_name: str) -> bool:
+def _place_search_term(place_name: str, place_url: str) -> str:
+    """장소 검색어 결정: 지도 링크가 있으면 링크에서 검색어 추출(우선), 없으면 매장명."""
+    if place_url:
+        m = re.search(r"/(?:search|place)/([^/?#]+)", place_url)
+        if m:
+            from urllib.parse import unquote
+
+            term = unquote(m.group(1)).strip()
+            # place id(숫자)만 있으면 매장명으로 폴백
+            if term and not term.isdigit():
+                return term
+    return place_name
+
+
+async def _insert_place(page, frame, place_name: str, place_url: str = "") -> bool:
     """현재 커서 위치에 네이버 장소(플레이스) 카드 삽입 — 지도/주소 포함.
 
+    지도 링크가 있으면 링크의 검색어를 우선 사용, 없으면 매장명으로 검색.
     장소 버튼 → 검색 → 첫 결과 선택 → 확인. 영업시간/주차는 네이버 플레이스가 제공.
     """
+    term = _place_search_term(place_name, place_url)
+    if not term:
+        return False
     try:
         await frame.locator(SEL_PLACE_BTN).first.click()
         await asyncio.sleep(random.uniform(1.0, 1.8))
         inp = frame.locator(SEL_PLACE_INPUT).first
-        await inp.fill(place_name)
+        await inp.fill(term)
         await inp.press("Enter")
 
         result = frame.locator(SEL_PLACE_RESULT).first
@@ -326,6 +344,7 @@ async def publish_naver_blog(
     image_paths: list[str] | None = None,
     visibility: str | None = None,
     place_name: str = "",
+    place_url: str = "",
 ) -> PublishResult:
     """네이버 블로그에 글 작성. dry-run 이면 발행하지 않고 스크린샷만."""
     image_paths = image_paths or []
@@ -369,7 +388,8 @@ async def publish_naver_blog(
             await asyncio.sleep(random.uniform(1.0, 2.0))
 
             placed = False
-            if place_name:
+            want_place = bool(place_name or place_url)
+            if want_place:
                 # 본문 끝으로 커서 이동 후 장소 카드 삽입
                 try:
                     await frame.locator(SEL_BODY).last.click()
@@ -377,13 +397,13 @@ async def publish_naver_blog(
                     await page.keyboard.press("Enter")
                 except Exception:
                     pass
-                placed = await _insert_place(page, frame, place_name)
+                placed = await _insert_place(page, frame, place_name, place_url)
                 await asyncio.sleep(random.uniform(0.8, 1.5))
 
             await page.screenshot(path=shot_path, full_page=True)
 
             if settings.publish_dry_run:
-                place_msg = f", 장소 {'삽입' if placed else '실패' if place_name else '없음'}"
+                place_msg = f", 장소 {'삽입' if placed else '실패' if want_place else '없음'}"
                 return PublishResult(
                     ok=True,
                     message=f"DRY-RUN: 제목/본문 + 사진 {n_photos}/{len(image_paths)}장{place_msg} (발행 안 함).",

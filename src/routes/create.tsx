@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -34,6 +34,8 @@ import {
   uploadMedia,
   makeVideo,
   checkCompliance,
+  getDefaults,
+  CATEGORIES,
   type ContentType,
   type GeneratedContent,
   type ScriptLine,
@@ -62,12 +64,18 @@ function CreatePage() {
   const [keywords, setKeywords] = useState<string[]>([]);
   const [category, setCategory] = useState("");
   const [placeName, setPlaceName] = useState("");
+  const [placeUrl, setPlaceUrl] = useState("");
   const [contentType, setContentType] = useState<ContentType>("place_review");
   const [hashtagInput, setHashtagInput] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [guideline, setGuideline] = useState("");
   const [dragging, setDragging] = useState(false);
   const [result, setResult] = useState<GeneratedContent | null>(null);
+
+  const defaultsQ = useQuery({ queryKey: ["defaults"], queryFn: getDefaults, staleTime: Infinity });
+  const guidelinePlaceholder =
+    (contentType === "vlog" ? defaultsQ.data?.video : defaultsQ.data?.blog) ??
+    "체험단 가이드라인을 붙여넣으세요 (비우면 유형별 기본 규칙 적용)";
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -79,6 +87,7 @@ function CreatePage() {
         guideline,
         requiredHashtags: hashtags,
         placeName,
+        placeUrl,
         mediaIds,
       });
     },
@@ -263,11 +272,18 @@ function CreatePage() {
 
               <div className="space-y-2">
                 <Label>카테고리</Label>
-                <Input
-                  value={category}
-                  placeholder="예: 맛집, 뷰티, 여행"
-                  onChange={(e) => setCategory(e.target.value)}
-                />
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="카테고리 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
@@ -277,8 +293,17 @@ function CreatePage() {
                   placeholder="예: 스타벅스 강남대로점"
                   onChange={(e) => setPlaceName(e.target.value)}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>네이버 지도 링크 (선택)</Label>
+                <Input
+                  value={placeUrl}
+                  placeholder="링크 있으면 우선 사용, 없으면 매장명으로 검색"
+                  onChange={(e) => setPlaceUrl(e.target.value)}
+                />
                 <p className="text-xs text-muted-foreground">
-                  입력 시 네이버 발행에 지도(장소 카드)가 자동 첨부됩니다.
+                  매장명 또는 지도 링크가 있으면 발행 시 지도(장소 카드)가 자동 첨부됩니다.
                 </p>
               </div>
 
@@ -339,10 +364,13 @@ function CreatePage() {
                 <Label>캠페인 가이드라인</Label>
                 <Textarea
                   value={guideline}
-                  placeholder="체험단 가이드라인을 붙여넣으세요 (선택 — 비우면 유형별 기본 규칙 적용)"
+                  placeholder={guidelinePlaceholder}
                   onChange={(e) => setGuideline(e.target.value)}
                   className="min-h-[120px] text-sm"
                 />
+                <p className="text-xs text-muted-foreground">
+                  비워두면 위 회색 텍스트(유형별 기본 규칙)가 자동 적용됩니다.
+                </p>
               </div>
 
               <Button
