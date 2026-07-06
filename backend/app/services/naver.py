@@ -64,6 +64,7 @@ def _md_to_plain(md: str) -> list[str]:
         line = re.sub(r"^#{1,6}\s+", "", line)      # 헤딩 마커 제거 (# 뒤 공백일 때만 → 해시태그 보존)
         line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)  # 볼드 제거
         line = re.sub(r"^[-*]\s+", "• ", line)         # 리스트 불릿
+        line = re.sub(r"\[사진\s*\d+\]", "", line).rstrip()  # [사진 N] 마커 제거(실사진 삽입)
         lines.append(line)
     # 연속 빈 줄은 하나로
     out: list[str] = []
@@ -107,40 +108,90 @@ async def _choose_photo_layout(frame, layout: str = "개별사진") -> None:
         pass  # 모달 없음(단일 사진) → 무시
 
 
-async def _insert_photos_once(page, frame, image_paths: list[str]) -> int:
-    """사진 버튼 1회 클릭 + 다중선택으로 모든 사진을 한 번에 업로드 (안정적)."""
-    if not image_paths:
-        return 0
+async def _close_library_panel(page, frame) -> None:
+    """사진 삽입 후 열리는 '라이브러리' 패널을 닫아 다음 사진 버튼 클릭을 막지 않게 함."""
+    for sel in (
+        "button.se-toolbar-exit-button",
+        ".se-sidebar-close-button",
+        "button[aria-label='닫기']",
+    ):
+        try:
+            btn = frame.locator(sel).first
+            if await btn.is_visible(timeout=800):
+                await btn.click()
+                await asyncio.sleep(0.4)
+                return
+        except Exception:
+            pass
+    # 셀렉터로 못 닫으면 Escape 시도
     try:
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(0.3)
+    except Exception:
+        pass
+
+
+async def _insert_one_photo(page, frame, path: str) -> bool:
+    """현재 커서 위치에 사진 1장 삽입 (단일 → 레이아웃 모달 없음)."""
+    try:
+        before = await frame.locator(SEL_IMAGE_COMPONENT).count()
         async with page.expect_file_chooser(timeout=10000) as fc_info:
             await frame.locator(SEL_IMAGE_BTN).first.click()
         chooser = await fc_info.value
-        await chooser.set_files(image_paths)  # 여러 파일 동시 선택
-        await _choose_photo_layout(frame)  # 다중이면 레이아웃 모달 처리
-        return await _wait_uploads(frame, len(image_paths))
+        await chooser.set_files(path)
+        for _ in range(90):
+            await asyncio.sleep(1.0)
+            if await frame.locator(SEL_IMAGE_COMPONENT).count() > before:
+                break
+        await asyncio.sleep(random.uniform(1.2, 2.0))
+        return True
     except Exception as e:  # noqa: BLE001
-        print(f"  ⚠️ 사진 삽입 실패: {e}")
-        return 0
+        print(f"  ⚠️ 사진 삽입 실패({path}): {e}")
+        return False
+
+
+def _photo_positions(n_paragraphs: int, n_photos: int) -> set[int]:
+    """사진을 삽입할 문단 인덱스(해당 문단 뒤) — 본문 전체에 고르게 분산."""
+    if n_photos <= 0 or n_paragraphs <= 0:
+        return set()
+    return {
+        min(round((k + 1) * n_paragraphs / (n_photos + 1)), n_paragraphs - 1)
+        for k in range(n_photos)
+    }
 
 
 async def _fill_body(page, frame, body: str, image_paths: list[str]) -> int:
-    """본문 텍스트 입력 후, 사진을 본문 끝에 한 번에 삽입. 삽입된 사진 수 반환.
-
-    (분산 배치는 사진 버튼 반복 클릭이 불안정해 후속 개선 대상 — 우선 안정성 확보.)
-    """
+    """본문 텍스트를 문단별로 쓰면서 사진을 적절한 위치에 분산 삽입. 삽입 수 반환."""
     body_el = frame.locator(SEL_BODY).last
     await body_el.click()
     await asyncio.sleep(random.uniform(0.3, 0.7))
 
     paragraphs = [p for p in _md_to_plain(body) if p != ""]
+    positions = _photo_positions(len(paragraphs), len(image_paths))
+
+    photo_i = 0
     for i, para in enumerate(paragraphs):
         await page.keyboard.insert_text(para)
         await page.keyboard.press("Enter")
+
+        if i in positions and photo_i < len(image_paths):
+            if await _insert_one_photo(page, frame, image_paths[photo_i]):
+                photo_i += 1
+            await _close_library_panel(page, frame)
+            # 이미지 뒤 새 문단으로 커서 복귀
+            await frame.locator(SEL_BODY).last.click()
+            await page.keyboard.press("End")
+
         if i < len(paragraphs) - 1:
             await page.keyboard.press("Enter")  # 문단 간 빈 줄
 
-    await page.keyboard.press("Enter")
-    return await _insert_photos_once(page, frame, image_paths)
+    # 위치에 못 넣고 남은 사진은 끝에 붙임
+    while photo_i < len(image_paths):
+        if not await _insert_one_photo(page, frame, image_paths[photo_i]):
+            break
+        photo_i += 1
+        await _close_library_panel(page, frame)
+    return photo_i
 
 
 async def _dismiss_draft_popup(frame) -> None:
