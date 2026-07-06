@@ -9,23 +9,25 @@
 
 import asyncio
 
-from app.db import init_db, list_content
+from app.db import get_content_media_ids, get_media_paths, init_db, list_content
 from app.services.naver import publish_naver_blog
 
 
 async def main() -> None:
     init_db()
     items = list_content(limit=1)
+    image_paths: list[str] = []
     if items:
         c = items[0]
         title, body = c.title, c.body
-        print(f"▶ 최근 생성 콘텐츠 사용: {title}")
+        image_paths = [p for (p, _mime) in get_media_paths(get_content_media_ids(c.id))]
+        print(f"▶ 최근 생성 콘텐츠 사용: {title} (사진 {len(image_paths)}장)")
     else:
         title = "beconti 발행 테스트"
-        body = "## 테스트\n\n네이버 발행 파이프라인 dry-run 테스트입니다.\n\n[사진 1]"
+        body = "## 테스트\n\n네이버 발행 파이프라인 dry-run 테스트입니다."
         print("▶ 저장된 콘텐츠가 없어 샘플로 진행")
 
-    result = await publish_naver_blog(title, body)
+    result = await publish_naver_blog(title, body, image_paths)
     print(f"\n{'✅' if result.ok else '❌'} {result.message}")
     if result.screenshot:
         print(f"📸 스크린샷: {result.screenshot}")

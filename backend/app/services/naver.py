@@ -74,17 +74,73 @@ def _md_to_plain(md: str) -> list[str]:
     return out or [""]
 
 
-async def _fill_body(page, body_el, body: str) -> None:
-    """본문 영역에 포커스 후 문단 단위로 입력 (insert_text 기반, 안정적)."""
+SEL_IMAGE_BTN = "button.se-image-toolbar-button"
+# 업로드 완료 판정: 실제 로드된 본문 이미지(img)만 카운트 (이미지당 1개)
+SEL_IMAGE_COMPONENT = (
+    "img.se-image-resource, img[src*='postfiles'], img[src*='blogfiles']"
+)
+
+
+async def _wait_uploads(frame, expected: int, timeout_s: int = 90) -> int:
+    """본문에 실제 이미지가 expected 개 로드될 때까지 대기. 최종 개수 반환."""
+    count = 0
+    for _ in range(timeout_s):
+        await asyncio.sleep(1.0)
+        count = await frame.locator(SEL_IMAGE_COMPONENT).count()
+        if count >= expected:
+            break
+    await asyncio.sleep(random.uniform(2.0, 3.0))  # 렌더 안정화 여유
+    return count
+
+
+async def _choose_photo_layout(frame, layout: str = "개별사진") -> None:
+    """다중 사진 업로드 시 뜨는 '사진 첨부 방식' 모달에서 레이아웃 선택.
+
+    개별사진 / 콜라주 / 슬라이드 중 하나. 단일 사진이면 모달이 안 떠서 무시.
+    """
+    try:
+        opt = frame.get_by_text(layout, exact=True).first
+        await opt.wait_for(state="visible", timeout=5000)
+        await opt.click()
+        await asyncio.sleep(random.uniform(0.5, 1.0))
+    except Exception:
+        pass  # 모달 없음(단일 사진) → 무시
+
+
+async def _insert_photos_once(page, frame, image_paths: list[str]) -> int:
+    """사진 버튼 1회 클릭 + 다중선택으로 모든 사진을 한 번에 업로드 (안정적)."""
+    if not image_paths:
+        return 0
+    try:
+        async with page.expect_file_chooser(timeout=10000) as fc_info:
+            await frame.locator(SEL_IMAGE_BTN).first.click()
+        chooser = await fc_info.value
+        await chooser.set_files(image_paths)  # 여러 파일 동시 선택
+        await _choose_photo_layout(frame)  # 다중이면 레이아웃 모달 처리
+        return await _wait_uploads(frame, len(image_paths))
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ 사진 삽입 실패: {e}")
+        return 0
+
+
+async def _fill_body(page, frame, body: str, image_paths: list[str]) -> int:
+    """본문 텍스트 입력 후, 사진을 본문 끝에 한 번에 삽입. 삽입된 사진 수 반환.
+
+    (분산 배치는 사진 버튼 반복 클릭이 불안정해 후속 개선 대상 — 우선 안정성 확보.)
+    """
+    body_el = frame.locator(SEL_BODY).last
     await body_el.click()
     await asyncio.sleep(random.uniform(0.3, 0.7))
-    paragraphs = _md_to_plain(body)
+
+    paragraphs = [p for p in _md_to_plain(body) if p != ""]
     for i, para in enumerate(paragraphs):
-        if para:
-            await page.keyboard.insert_text(para)
+        await page.keyboard.insert_text(para)
+        await page.keyboard.press("Enter")
         if i < len(paragraphs) - 1:
-            await page.keyboard.press("Enter")
-            await asyncio.sleep(random.uniform(0.02, 0.12))
+            await page.keyboard.press("Enter")  # 문단 간 빈 줄
+
+    await page.keyboard.press("Enter")
+    return await _insert_photos_once(page, frame, image_paths)
 
 
 async def _dismiss_draft_popup(frame) -> None:
@@ -123,8 +179,11 @@ async def open_for_login() -> None:
         print("✓ 세션 저장 완료. 이제 발행 테스트를 쓸 수 있습니다.")
 
 
-async def publish_naver_blog(title: str, body: str) -> PublishResult:
+async def publish_naver_blog(
+    title: str, body: str, image_paths: list[str] | None = None
+) -> PublishResult:
     """네이버 블로그에 글 작성. dry-run 이면 발행하지 않고 스크린샷만."""
+    image_paths = image_paths or []
     if not settings.naver_blog_id:
         return PublishResult(ok=False, message="NAVER_BLOG_ID 가 .env 에 설정되지 않았습니다.")
 
@@ -160,16 +219,15 @@ async def publish_naver_blog(title: str, body: str) -> PublishResult:
             await _human_type(title_el, title)
             await asyncio.sleep(random.uniform(0.5, 1.2))
 
-            body_el = frame.locator(SEL_BODY).last
-            await _fill_body(page, body_el, body)
+            n_photos = await _fill_body(page, frame, body, image_paths)
             await asyncio.sleep(random.uniform(1.0, 2.0))
 
-            await page.screenshot(path=shot_path, full_page=False)
+            await page.screenshot(path=shot_path, full_page=True)
 
             if settings.publish_dry_run:
                 return PublishResult(
                     ok=True,
-                    message="DRY-RUN: 제목/본문 입력까지 완료(발행 안 함). 스크린샷 저장됨.",
+                    message=f"DRY-RUN: 제목/본문 + 사진 {n_photos}/{len(image_paths)}장 입력 완료(발행 안 함).",
                     screenshot=shot_path,
                 )
 
