@@ -13,35 +13,75 @@ from pathlib import Path
 
 from ..config import settings
 
-TONE_LABELS = {
-    "review": "생생한 방문 리뷰형 (직접 다녀온 듯 구체적이고 솔직한 후기)",
-    "info": "정보 전달형 (핵심 정보를 정리해 주는 가이드 톤)",
-    "daily": "일상 브이로그형 (친근한 말투의 일상 기록)",
+CONTENT_TYPE_LABELS = {
+    "place_review": "장소 리뷰 (방문 경험 중심 — 위치·분위기·메뉴/가격·재방문 의향)",
+    "product_review": "제품 리뷰 (개봉·사용 경험 중심 — 특징·장단점·추천 대상)",
+    "vlog": "브이로그 (시간 흐름의 일상 기록, 친근한 말투 — 영상 중심)",
 }
+
+# 유형 한글 라벨 → 내부 키
+TYPE_ALIASES = {"장소리뷰": "place_review", "제품리뷰": "product_review", "브이로그": "vlog"}
+
+# 붙여넣은 가이드라인이 없을 때 쓰는 유형별 기본값
+DEFAULT_GUIDELINE_BLOG = """- 실제로 방문/사용한 것처럼 생생하고 구체적으로, 광고 티는 최소화
+- 본문 1,000자 이상, 소제목(##)으로 문단 구분해 가독성 확보
+- 핵심 키워드를 본문에 자연스럽게 5회 이상 반복
+- 사진이 들어갈 위치에 [사진 N] 표기
+- 대가성 문구 포함: "소정의 제품/서비스를 제공받아 작성한 후기입니다"
+- 마지막에 필수 해시태그를 나열"""
+
+DEFAULT_GUIDELINE_VIDEO = """- 15~30초 세로 영상(9:16) 기준
+- 첫 3초에 강한 후킹, 지루하지 않게 장면 전환
+- 각 컷에 짧은 자막 필수, 브랜드/제품명을 초반에 노출
+- 마지막 컷에 필수 해시태그 안내"""
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}
 
 
-def _build_prompt(keywords: list[str], tone: str) -> str:
-    kw = ", ".join(keywords) if keywords else "(키워드 없음)"
-    tone_desc = TONE_LABELS.get(tone, TONE_LABELS["review"])
-    return f"""당신은 네이버 블로그 상위노출에 능한 한국어 콘텐츠 작가입니다.
-첨부된 사진들을 **업로드된 순서대로** 하나의 방문/경험 흐름으로 보고 분석하세요.
+def default_guideline(content_type: str) -> str:
+    return DEFAULT_GUIDELINE_VIDEO if content_type == "vlog" else DEFAULT_GUIDELINE_BLOG
 
+
+def _build_prompt(
+    keywords: list[str],
+    category: str,
+    content_type: str,
+    guideline: str,
+    hashtags: list[str],
+) -> str:
+    kw = ", ".join(keywords) if keywords else "(없음)"
+    tags = " ".join(hashtags) if hashtags else "(지정 없음)"
+    type_desc = CONTENT_TYPE_LABELS.get(content_type, CONTENT_TYPE_LABELS["place_review"])
+    is_video = content_type == "vlog"
+    focus = "숏폼 영상 대본" if is_video else "블로그 본문"
+    tail = (
+        "- 이 유형은 영상이 핵심입니다. script 를 8~12줄로 충실히 작성하고, body 는 요약 설명 2~3문장이면 됩니다."
+        if is_video
+        else "- script 는 위 사진으로 만들 15~30초 숏폼용 5~7줄로 작성하세요."
+    )
+    return f"""당신은 체험단 리뷰에 능한 한국어 콘텐츠 작가입니다.
+첨부된 사진/영상을 **업로드된 순서대로** 하나의 경험 흐름으로 분석해 {focus}을(를) 중심으로 작성하세요.
+
+- 카테고리: {category or "(미지정)"}
+- 콘텐츠 유형: {type_desc}
 - 핵심 키워드: {kw}
-- 톤/스타일: {tone_desc}
+- 필수 해시태그: {tags}
+
+[반드시 지킬 가이드라인]
+{guideline}
 
 아래 JSON 형식으로만 응답하세요. 다른 설명 없이 JSON 만 출력합니다.
 
 {{
   "title": "클릭을 부르는 자연스러운 한국어 제목",
-  "body": "마크다운 형식의 블로그 본문. 소제목(##)과 문단으로 구성하고, 사진 위치에 [사진 N] 표기를 넣어 흐름을 잡아주세요. 800자 이상.",
+  "body": "마크다운 형식의 본문. 소제목(##)과 문단으로 구성하고, 사진 위치에 [사진 N] 표기.",
   "script": [
     {{"time": "0-3s", "caption": "화면 하단 자막(짧게)", "narration": "나레이션 대본 문장"}}
   ]
 }}
 
-script 는 위 사진들로 만들 15~30초 숏폼용으로 5~7줄 작성하세요."""
+- 필수 해시태그는 반드시 결과에 포함하세요.
+{tail}"""
 
 
 def _parse_json(text: str) -> dict:
@@ -58,16 +98,16 @@ def _parse_json(text: str) -> dict:
         raise
 
 
-def _stub(keywords: list[str], tone: str, n_images: int) -> dict:
+def _stub(keywords: list[str], content_type: str, hashtags: list[str], n_images: int) -> dict:
     kw = ", ".join(keywords) if keywords else "샘플 키워드"
+    tags = " ".join(hashtags) if hashtags else "#샘플태그"
     body = (
         f"# {kw} 후기\n\n"
         "> ⚠️ GEMINI_API_KEY 가 설정되지 않아 **스텁(더미) 초안**이 반환되었습니다.\n"
         "> backend/.env 에 키를 넣으면 실제 AI 분석 결과로 대체됩니다.\n\n"
-        f"## 첫인상\n\n업로드한 사진 {n_images}장을 바탕으로 작성될 자리입니다. "
-        f"'{kw}' 키워드와 {TONE_LABELS.get(tone, tone)} 톤으로 생성됩니다.\n\n"
+        f"## 첫인상\n\n업로드한 사진 {n_images}장 · 유형 '{content_type}' 로 작성될 자리입니다.\n\n"
         "## 상세\n\n[사진 1] 이 위치에 사진별 설명이 들어갑니다.\n\n"
-        "## 마무리\n\n방문을 고민 중이라면 참고가 되었길 바랍니다."
+        f"## 마무리\n\n방문을 고민 중이라면 참고가 되었길 바랍니다.\n\n{tags}"
     )
     script = [
         {"time": "0-3s", "caption": f"{kw} 다녀왔어요", "narration": f"오늘은 {kw}에 다녀왔습니다."},
@@ -78,12 +118,25 @@ def _stub(keywords: list[str], tone: str, n_images: int) -> dict:
     return {"title": f"{kw} 방문 후기", "body": body, "script": script}
 
 
-def generate_draft(image_paths: list[str], keywords: list[str], tone: str) -> dict:
-    """이미지 경로 목록 → {title, body, script[]} dict 반환."""
+def generate_draft(
+    image_paths: list[str],
+    keywords: list[str],
+    category: str = "",
+    content_type: str = "place_review",
+    guideline: str = "",
+    hashtags: list[str] | None = None,
+) -> dict:
+    """이미지 경로 + 생성 옵션 → {title, body, script[]} dict 반환.
+
+    guideline 이 비어 있으면 유형별 기본 가이드라인을 사용한다.
+    """
+    hashtags = hashtags or []
+    content_type = TYPE_ALIASES.get(content_type, content_type)
+    guideline = guideline.strip() or default_guideline(content_type)
     images = [p for p in image_paths if Path(p).suffix.lower() in _IMAGE_EXTS]
 
     if not settings.gemini_api_key:
-        return _stub(keywords, tone, len(images))
+        return _stub(keywords, content_type, hashtags, len(images))
 
     # 지연 import: 키 없는 환경에서 SDK 미설치여도 스텁 경로는 동작
     from google import genai
@@ -97,7 +150,7 @@ def generate_draft(image_paths: list[str], keywords: list[str], tone: str) -> di
         suffix = Path(path).suffix.lower().lstrip(".")
         mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
         parts.append(types.Part.from_bytes(data=data, mime_type=mime))
-    parts.append(_build_prompt(keywords, tone))
+    parts.append(_build_prompt(keywords, category, content_type, guideline, hashtags))
 
     config = types.GenerateContentConfig(
         response_mime_type="application/json",

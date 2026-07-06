@@ -17,7 +17,14 @@ def generate(payload: GeneratePayload) -> GeneratedContent:
         raise HTTPException(status_code=404, detail="mediaIds 에 해당하는 업로드 파일을 찾을 수 없습니다.")
 
     image_paths = [p for (p, _mime) in paths]
-    draft = generate_draft(image_paths, payload.keywords, payload.tone)
+    draft = generate_draft(
+        image_paths,
+        keywords=payload.keywords,
+        category=payload.category,
+        content_type=payload.contentType,
+        guideline=payload.guideline,
+        hashtags=payload.requiredHashtags,
+    )
 
     script = [
         ScriptLine(

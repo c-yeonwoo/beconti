@@ -24,8 +24,12 @@ class ScriptLine(BaseModel):
 
 class GeneratePayload(BaseModel):
     keywords: list[str] = []
-    tone: str = "review"
+    category: str = ""                    # 카테고리 (예: 맛집, 뷰티, 여행)
+    contentType: str = "place_review"     # 유형: place_review | product_review | vlog
+    guideline: str = ""                   # 붙여넣은 가이드라인. 비면 유형별 기본값 사용
+    requiredHashtags: list[str] = []      # 필수 해시태그
     mediaIds: list[str] = []
+    tone: str = ""                        # deprecated (하위호환용)
 
 
 class GeneratedContent(BaseModel):
