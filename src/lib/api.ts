@@ -34,6 +34,7 @@ export interface GeneratePayload {
   contentType: ContentType;
   guideline: string; // 비우면 백엔드가 유형별 기본 가이드라인 사용
   requiredHashtags: string[];
+  placeName: string; // 매장명(상호) — 네이버 장소 카드(지도) 삽입용
   mediaIds: string[];
 }
 

@@ -28,6 +28,7 @@ class GeneratePayload(BaseModel):
     contentType: str = "place_review"     # 유형: place_review | product_review | vlog
     guideline: str = ""                   # 붙여넣은 가이드라인. 비면 유형별 기본값 사용
     requiredHashtags: list[str] = []      # 필수 해시태그
+    placeName: str = ""                   # 매장명(상호) — 네이버 장소 카드 삽입용
     mediaIds: list[str] = []
     tone: str = ""                        # deprecated (하위호환용)
 

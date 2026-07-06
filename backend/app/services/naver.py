@@ -39,6 +39,13 @@ VISIBILITY_LABELS = {
     "private": "open_private",
 }
 
+# 장소(플레이스) 카드 삽입
+SEL_PLACE_BTN = "button.se-map-toolbar-button"
+SEL_PLACE_INPUT = "input[placeholder='장소명을 입력하세요.']"
+SEL_PLACE_RESULT = "a.se-place-map-search-result-link, li.se-place-map-search-result-item"
+SEL_PLACE_ADD = "button.se-place-add-button"  # 결과의 '+ 추가' 버튼
+SEL_PLACE_CONFIRM = "button.se-popup-button-confirm"
+
 
 class PublishResult:
     def __init__(self, ok: bool, message: str, screenshot: str | None = None) -> None:
@@ -203,6 +210,44 @@ async def _fill_body(page, frame, body: str, image_paths: list[str]) -> int:
     return photo_i
 
 
+async def _insert_place(page, frame, place_name: str) -> bool:
+    """현재 커서 위치에 네이버 장소(플레이스) 카드 삽입 — 지도/주소 포함.
+
+    장소 버튼 → 검색 → 첫 결과 선택 → 확인. 영업시간/주차는 네이버 플레이스가 제공.
+    """
+    try:
+        await frame.locator(SEL_PLACE_BTN).first.click()
+        await asyncio.sleep(random.uniform(1.0, 1.8))
+        inp = frame.locator(SEL_PLACE_INPUT).first
+        await inp.fill(place_name)
+        await inp.press("Enter")
+
+        result = frame.locator(SEL_PLACE_RESULT).first
+        await result.wait_for(state="visible", timeout=8000)
+        await asyncio.sleep(random.uniform(0.5, 1.0))
+        await result.click()  # 결과 선택 → '+ 추가' 버튼 노출
+        await asyncio.sleep(random.uniform(0.6, 1.0))
+
+        # '추가' 클릭 → 장소가 담기고 '확인'이 활성화됨
+        await frame.locator(SEL_PLACE_ADD).first.click()
+
+        confirm = frame.locator(SEL_PLACE_CONFIRM).first
+        for _ in range(16):
+            if not await confirm.is_disabled():
+                break
+            await asyncio.sleep(0.5)
+        await confirm.click()
+        await asyncio.sleep(random.uniform(1.0, 2.0))
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ 장소 삽입 실패({place_name}): {e}")
+        try:
+            await page.keyboard.press("Escape")
+        except Exception:
+            pass
+        return False
+
+
 async def _dismiss_draft_popup(frame) -> None:
     try:
         btn = frame.locator(SEL_CANCEL_DRAFT).first
@@ -260,6 +305,7 @@ async def publish_naver_blog(
     body: str,
     image_paths: list[str] | None = None,
     visibility: str | None = None,
+    place_name: str = "",
 ) -> PublishResult:
     """네이버 블로그에 글 작성. dry-run 이면 발행하지 않고 스크린샷만."""
     image_paths = image_paths or []
@@ -302,12 +348,25 @@ async def publish_naver_blog(
             n_photos = await _fill_body(page, frame, body, image_paths)
             await asyncio.sleep(random.uniform(1.0, 2.0))
 
+            placed = False
+            if place_name:
+                # 본문 끝으로 커서 이동 후 장소 카드 삽입
+                try:
+                    await frame.locator(SEL_BODY).last.click()
+                    await page.keyboard.press("End")
+                    await page.keyboard.press("Enter")
+                except Exception:
+                    pass
+                placed = await _insert_place(page, frame, place_name)
+                await asyncio.sleep(random.uniform(0.8, 1.5))
+
             await page.screenshot(path=shot_path, full_page=True)
 
             if settings.publish_dry_run:
+                place_msg = f", 장소 {'삽입' if placed else '실패' if place_name else '없음'}"
                 return PublishResult(
                     ok=True,
-                    message=f"DRY-RUN: 제목/본문 + 사진 {n_photos}/{len(image_paths)}장 입력 완료(발행 안 함).",
+                    message=f"DRY-RUN: 제목/본문 + 사진 {n_photos}/{len(image_paths)}장{place_msg} (발행 안 함).",
                     screenshot=shot_path,
                 )
 

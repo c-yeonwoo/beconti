@@ -53,10 +53,15 @@ def init_db() -> None:
                 script_json      TEXT NOT NULL DEFAULT '[]',
                 platform_json    TEXT NOT NULL DEFAULT '{}',
                 media_ids_json   TEXT NOT NULL DEFAULT '[]',
+                place_name       TEXT NOT NULL DEFAULT '',
                 created_at       TEXT NOT NULL
             );
             """
         )
+        # 기존 DB 마이그레이션: place_name 컬럼 없으면 추가
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(content)").fetchall()]
+        if "place_name" not in cols:
+            conn.execute("ALTER TABLE content ADD COLUMN place_name TEXT NOT NULL DEFAULT ''")
 
 
 # ─── media ────────────────────────────────────────────────────────
@@ -95,12 +100,12 @@ def _row_to_content(row: sqlite3.Row) -> GeneratedContent:
     )
 
 
-def save_content(content: GeneratedContent, media_ids: list[str]) -> None:
+def save_content(content: GeneratedContent, media_ids: list[str], place_name: str = "") -> None:
     with get_conn() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO content
-               (id, title, body, video_url, script_json, platform_json, media_ids_json, created_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               (id, title, body, video_url, script_json, platform_json, media_ids_json, place_name, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (
                 content.id,
                 content.title,
@@ -109,9 +114,18 @@ def save_content(content: GeneratedContent, media_ids: list[str]) -> None:
                 json.dumps([s.model_dump() for s in content.script], ensure_ascii=False),
                 json.dumps(content.platformStatus, ensure_ascii=False),
                 json.dumps(media_ids, ensure_ascii=False),
+                place_name,
                 content.createdAt,
             ),
         )
+
+
+def get_content_place_name(content_id: str) -> str:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT place_name FROM content WHERE id = ?", (content_id,)
+        ).fetchone()
+    return (row["place_name"] if row else "") or ""
 
 
 def get_content(content_id: str) -> GeneratedContent | None:

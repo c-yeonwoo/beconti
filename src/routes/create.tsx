@@ -61,6 +61,7 @@ function CreatePage() {
   const [keywordInput, setKeywordInput] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [category, setCategory] = useState("");
+  const [placeName, setPlaceName] = useState("");
   const [contentType, setContentType] = useState<ContentType>("place_review");
   const [hashtagInput, setHashtagInput] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
@@ -77,6 +78,7 @@ function CreatePage() {
         contentType,
         guideline,
         requiredHashtags: hashtags,
+        placeName,
         mediaIds,
       });
     },
@@ -266,6 +268,18 @@ function CreatePage() {
                   placeholder="예: 맛집, 뷰티, 여행"
                   onChange={(e) => setCategory(e.target.value)}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>매장명 (지도 첨부용, 선택)</Label>
+                <Input
+                  value={placeName}
+                  placeholder="예: 스타벅스 강남대로점"
+                  onChange={(e) => setPlaceName(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  입력 시 네이버 발행에 지도(장소 카드)가 자동 첨부됩니다.
+                </p>
               </div>
 
               <div className="space-y-2">

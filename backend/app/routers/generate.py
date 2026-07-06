@@ -45,5 +45,5 @@ def generate(payload: GeneratePayload) -> GeneratedContent:
         createdAt=datetime.now(timezone.utc).isoformat(),
         platformStatus=default_platform_status(),
     )
-    save_content(content, payload.mediaIds)
+    save_content(content, payload.mediaIds, payload.placeName)
     return content
