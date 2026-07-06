@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -177,37 +178,52 @@ def _photo_positions(n_paragraphs: int, n_photos: int) -> set[int]:
 
 
 async def _fill_body(page, frame, body: str, image_paths: list[str]) -> int:
-    """본문 텍스트를 문단별로 쓰면서 사진을 적절한 위치에 분산 삽입. 삽입 수 반환."""
+    """Gemini가 배치한 [사진 N] 마커 순서/위치대로 사진을 삽입. 삽입 수 반환.
+
+    본문을 [사진 N] 마커로 분할해, 텍스트는 그대로 입력하고 마커 위치에
+    N번째(업로드 순서) 사진을 넣는다. 참조 안 된 사진은 끝에 붙인다.
+    """
     body_el = frame.locator(SEL_BODY).last
     await body_el.click()
     await asyncio.sleep(random.uniform(0.3, 0.7))
 
-    paragraphs = [p for p in _md_to_plain(body) if p != ""]
-    positions = _photo_positions(len(paragraphs), len(image_paths))
-
-    photo_i = 0
-    for i, para in enumerate(paragraphs):
-        await page.keyboard.insert_text(para)
-        await page.keyboard.press("Enter")
-
-        if i in positions and photo_i < len(image_paths):
-            if await _insert_one_photo(page, frame, image_paths[photo_i]):
-                photo_i += 1
-            await _close_library_panel(page, frame)
-            # 이미지 뒤 새 문단으로 커서 복귀
+    async def _refocus_body():
+        await _close_library_panel(page, frame)
+        try:
             await frame.locator(SEL_BODY).last.click()
             await page.keyboard.press("End")
+        except Exception:
+            pass
 
-        if i < len(paragraphs) - 1:
-            await page.keyboard.press("Enter")  # 문단 간 빈 줄
+    parts = re.split(r"(\[사진\s*\d+\])", body)
+    used: set[int] = set()
+    inserted = 0
 
-    # 위치에 못 넣고 남은 사진은 끝에 붙임
-    while photo_i < len(image_paths):
-        if not await _insert_one_photo(page, frame, image_paths[photo_i]):
-            break
-        photo_i += 1
-        await _close_library_panel(page, frame)
-    return photo_i
+    for part in parts:
+        m = re.fullmatch(r"\[사진\s*(\d+)\]", part.strip())
+        if m:
+            idx = int(m.group(1)) - 1
+            if 0 <= idx < len(image_paths) and idx not in used:
+                await page.keyboard.press("Enter")
+                if await _insert_one_photo(page, frame, image_paths[idx]):
+                    inserted += 1
+                    used.add(idx)
+                await _refocus_body()
+                await page.keyboard.press("Enter")
+        else:
+            for line in _md_to_plain(part):
+                if line:
+                    await page.keyboard.insert_text(line)
+                await page.keyboard.press("Enter")
+
+    # 마커에서 참조되지 않은 사진은 본문 끝에 추가
+    for i, path in enumerate(image_paths):
+        if i not in used:
+            if not await _insert_one_photo(page, frame, path):
+                break
+            inserted += 1
+            await _refocus_body()
+    return inserted
 
 
 async def _insert_place(page, frame, place_name: str) -> bool:
