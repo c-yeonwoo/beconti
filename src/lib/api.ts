@@ -64,6 +64,15 @@ export async function listContent() {
   return data as GeneratedContent[];
 }
 
+export async function makeVideo(contentId: string) {
+  const { data } = await api.post(
+    `/api/video/${contentId}`,
+    {},
+    { timeout: 180000 }, // 렌더에 시간 소요
+  );
+  return data as GeneratedContent;
+}
+
 export async function pingBackend(): Promise<boolean> {
   try {
     await api.get("/", { timeout: 2000 });

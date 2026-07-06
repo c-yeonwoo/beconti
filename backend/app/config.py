@@ -26,6 +26,10 @@ class Settings:
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         self.anthropic_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5").strip()
 
+        # 숏폼 렌더: Creatomate 우선, 크레딧/키 없으면 FFmpeg fallback
+        self.creatomate_api_key = os.getenv("CREATOMATE_API_KEY", "").strip()
+        self.creatomate_template_id = os.getenv("CREATOMATE_TEMPLATE_ID", "").strip()
+
         self.data_dir = Path(os.getenv("DATA_DIR", "./data")).expanduser().resolve()
         self.upload_dir = self.data_dir / "uploads"
         self.render_dir = self.data_dir / "renders"

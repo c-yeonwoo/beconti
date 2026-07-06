@@ -2,7 +2,16 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Upload, X, Sparkles, Loader2, ArrowLeft, Save, Send } from "lucide-react";
+import {
+  Upload,
+  X,
+  Sparkles,
+  Loader2,
+  ArrowLeft,
+  Save,
+  Send,
+  Clapperboard,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +29,7 @@ import { cn } from "@/lib/utils";
 import {
   generateContent,
   uploadMedia,
+  makeVideo,
   type ContentType,
   type GeneratedContent,
   type ScriptLine,
@@ -378,6 +388,17 @@ function ResultView({
     setResult({ ...safe, script: next });
   };
 
+  const videoMutation = useMutation({
+    mutationFn: () => makeVideo(safe.id),
+    onSuccess: (data) => {
+      setResult(data);
+      toast.success("숏폼 영상 생성 완료");
+    },
+    onError: (err: Error) => {
+      toast.error("숏폼 생성 실패", { description: err.message });
+    },
+  });
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <Card>
@@ -419,10 +440,28 @@ function ResultView({
               />
             ) : (
               <div className="text-center text-xs text-muted-foreground p-4">
-                Creatomate 렌더 완료 시<br />영상 미리보기가 표시됩니다
+                아래 "숏폼 영상 생성"을 누르면<br />사진 + 자막 영상이 만들어집니다
               </div>
             )}
           </div>
+
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={videoMutation.isPending || safe.script.length === 0}
+            onClick={() => videoMutation.mutate()}
+          >
+            {videoMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> 영상 생성 중... (수십 초)
+              </>
+            ) : (
+              <>
+                <Clapperboard className="h-4 w-4" />{" "}
+                {safe.videoUrl ? "숏폼 다시 생성" : "숏폼 영상 생성"}
+              </>
+            )}
+          </Button>
 
           <div className="space-y-2">
             <Label>대본 (시간 · 자막 · 나레이션)</Label>

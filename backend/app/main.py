@@ -14,10 +14,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import init_db
-from .routers import content, generate, publish, upload
+from .routers import content, generate, publish, upload, video
 
 
 @asynccontextmanager
@@ -51,6 +52,11 @@ app.include_router(upload.router)
 app.include_router(generate.router)
 app.include_router(publish.router)
 app.include_router(content.router)
+app.include_router(video.router)
+
+# 렌더된 MP4 등 정적 서빙 (프론트에서 재생) → http://localhost:8000/media/renders/<file>
+settings.ensure_dirs()
+app.mount("/media", StaticFiles(directory=str(settings.data_dir)), name="media")
 
 
 @app.get("/")

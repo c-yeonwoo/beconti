@@ -136,6 +136,11 @@ def list_content(limit: int = 50) -> list[GeneratedContent]:
     return [_row_to_content(r) for r in rows]
 
 
+def update_video_url(content_id: str, url: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE content SET video_url = ? WHERE id = ?", (url, content_id))
+
+
 def update_platform_status(content_id: str, platform: str, status: str) -> None:
     with get_conn() as conn:
         row = conn.execute(
