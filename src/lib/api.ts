@@ -26,9 +26,14 @@ export interface GeneratedContent {
   platformStatus: Record<Platform, PublishStatus>;
 }
 
+export type ContentType = "place_review" | "product_review" | "vlog";
+
 export interface GeneratePayload {
   keywords: string[];
-  tone: string;
+  category: string;
+  contentType: ContentType;
+  guideline: string; // 비우면 백엔드가 유형별 기본 가이드라인 사용
+  requiredHashtags: string[];
   mediaIds: string[];
 }
 

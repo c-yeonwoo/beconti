@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import {
   generateContent,
   uploadMedia,
+  type ContentType,
   type GeneratedContent,
   type ScriptLine,
 } from "@/lib/api";
@@ -44,14 +45,25 @@ function CreatePage() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [keywordInput, setKeywordInput] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
-  const [tone, setTone] = useState("review");
+  const [category, setCategory] = useState("");
+  const [contentType, setContentType] = useState<ContentType>("place_review");
+  const [hashtagInput, setHashtagInput] = useState("");
+  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [guideline, setGuideline] = useState("");
   const [dragging, setDragging] = useState(false);
   const [result, setResult] = useState<GeneratedContent | null>(null);
 
   const mutation = useMutation({
     mutationFn: async () => {
       const { mediaIds } = await uploadMedia(media.map((m) => m.file));
-      return generateContent({ keywords, tone, mediaIds });
+      return generateContent({
+        keywords,
+        category,
+        contentType,
+        guideline,
+        requiredHashtags: hashtags,
+        mediaIds,
+      });
     },
     onSuccess: (data) => {
       setResult(data);
@@ -87,6 +99,15 @@ function CreatePage() {
     if (keywords.includes(k)) return;
     setKeywords([...keywords, k]);
     setKeywordInput("");
+  };
+
+  const addHashtag = () => {
+    let h = hashtagInput.trim();
+    if (!h) return;
+    if (!h.startsWith("#")) h = `#${h}`;
+    if (hashtags.includes(h)) return;
+    setHashtags([...hashtags, h]);
+    setHashtagInput("");
   };
 
   const canGenerate = media.length > 0 && keywords.length > 0;
@@ -224,17 +245,75 @@ function CreatePage() {
               </div>
 
               <div className="space-y-2">
-                <Label>톤 / 스타일</Label>
-                <Select value={tone} onValueChange={setTone}>
+                <Label>카테고리</Label>
+                <Input
+                  value={category}
+                  placeholder="예: 맛집, 뷰티, 여행"
+                  onChange={(e) => setCategory(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>유형</Label>
+                <Select
+                  value={contentType}
+                  onValueChange={(v) => setContentType(v as ContentType)}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="review">리뷰형</SelectItem>
-                    <SelectItem value="info">정보형</SelectItem>
-                    <SelectItem value="daily">일상형</SelectItem>
+                    <SelectItem value="place_review">장소 리뷰</SelectItem>
+                    <SelectItem value="product_review">제품 리뷰</SelectItem>
+                    <SelectItem value="vlog">브이로그 (영상 중심)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>필수 해시태그</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={hashtagInput}
+                    placeholder="예: 성수동카페"
+                    onChange={(e) => setHashtagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === "Enter" &&
+                        !e.nativeEvent.isComposing &&
+                        e.keyCode !== 229
+                      ) {
+                        e.preventDefault();
+                        addHashtag();
+                      }
+                    }}
+                  />
+                  <Button type="button" variant="outline" onClick={addHashtag}>
+                    추가
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {hashtags.map((h) => (
+                    <Badge
+                      key={h}
+                      variant="secondary"
+                      className="cursor-pointer"
+                      onClick={() => setHashtags(hashtags.filter((x) => x !== h))}
+                    >
+                      {h} <X className="h-3 w-3 ml-1" />
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>캠페인 가이드라인</Label>
+                <Textarea
+                  value={guideline}
+                  placeholder="체험단 가이드라인을 붙여넣으세요 (선택 — 비우면 유형별 기본 규칙 적용)"
+                  onChange={(e) => setGuideline(e.target.value)}
+                  className="min-h-[120px] text-sm"
+                />
               </div>
 
               <Button
