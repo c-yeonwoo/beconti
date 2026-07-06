@@ -31,8 +31,10 @@ class Settings:
         self.render_dir = self.data_dir / "renders"
         self.db_path = self.data_dir / "beconti.db"
 
-        self.naver_user_data_dir = os.getenv("NAVER_CHROME_USER_DATA_DIR", "").strip()
-        self.naver_profile = os.getenv("NAVER_CHROME_PROFILE", "Default").strip() or "Default"
+        # 비어 있으면 자동화 전용 프로필(data/naver-profile) 사용 → 메인 크롬과 독립,
+        # 여기 네이버 로그인을 1회만 해두면 세션이 유지된다.
+        raw_naver_dir = os.getenv("NAVER_CHROME_USER_DATA_DIR", "").strip()
+        self.naver_user_data_dir = raw_naver_dir or str(self.data_dir / "naver-profile")
         self.naver_blog_id = os.getenv("NAVER_BLOG_ID", "").strip()
         self.publish_dry_run = _bool("PUBLISH_DRY_RUN", True)
         self.playwright_headless = _bool("PLAYWRIGHT_HEADLESS", False)
