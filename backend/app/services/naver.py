@@ -78,6 +78,10 @@ def _md_to_plain(md: str) -> list[str]:
     lines: list[str] = []
     for raw in md.splitlines():
         line = raw.rstrip()
+        # 지도/위치 링크 라인 제거 (위치는 장소 카드 embed 가 담당)
+        if re.search(r"지도\s*위치\s*링크|map\.naver\.com|지도\s*보기|위치\s*정보\s*[:：]\s*http", line):
+            line = re.sub(r"\[?\s*(지도\s*위치\s*링크|위치\s*정보)\s*[:：].*", "", line)
+            line = re.sub(r"https?://map\.naver\.com/\S*\]?", "", line)
         line = re.sub(r"^#{1,6}\s+", "", line)      # 헤딩 마커 제거 (# 뒤 공백일 때만 → 해시태그 보존)
         line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)  # 볼드 제거
         line = re.sub(r"^[-*]\s+", "• ", line)         # 리스트 불릿
