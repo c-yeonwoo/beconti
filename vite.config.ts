@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    // 개발 서버 포트 (흔한 8080 대신)
+    server: { port: 7817, strictPort: true },
+  },
 });
