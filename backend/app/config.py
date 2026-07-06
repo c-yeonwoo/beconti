@@ -36,6 +36,8 @@ class Settings:
         raw_naver_dir = os.getenv("NAVER_CHROME_USER_DATA_DIR", "").strip()
         self.naver_user_data_dir = raw_naver_dir or str(self.data_dir / "naver-profile")
         self.naver_blog_id = os.getenv("NAVER_BLOG_ID", "").strip()
+        # 공개 범위: public | neighbor | both | private (기본 public=전체공개)
+        self.naver_visibility = os.getenv("NAVER_PUBLISH_VISIBILITY", "public").strip() or "public"
         self.publish_dry_run = _bool("PUBLISH_DRY_RUN", True)
         self.playwright_headless = _bool("PLAYWRIGHT_HEADLESS", False)
 

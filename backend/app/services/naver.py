@@ -27,8 +27,17 @@ SEL_MAIN_IFRAME = "iframe#mainFrame"
 SEL_TITLE = ".se-section-documentTitle .se-text-paragraph, .se-documentTitle .se-text-paragraph"
 SEL_BODY = ".se-section-text .se-text-paragraph, .se-component-content .se-text-paragraph"
 SEL_CANCEL_DRAFT = "button.se-popup-button-cancel"  # "이어서 작성" 팝업 취소
-SEL_PUBLISH_OPEN = "button.publish_btn__m9KHH, button[data-testid='publishButton'], .btn_area .publish"
-SEL_PUBLISH_CONFIRM = "button.confirm_btn__WEaBq, button[data-testid='seOnePublishBtn']"
+# 발행: data 속성이 클래스 해시보다 안정적
+SEL_PUBLISH_OPEN = "button[data-click-area='tpb.publish'], button.publish_btn__m9KHH"
+SEL_PUBLISH_CONFIRM = "button[data-testid='seOnePublishBtn'], button.confirm_btn__WEaBq"
+
+# 공개 범위 → 라벨 for 속성
+VISIBILITY_LABELS = {
+    "public": "open_public",
+    "neighbor": "open_neighbor",
+    "both": "open_both_neighbor",
+    "private": "open_private",
+}
 
 
 class PublishResult:
@@ -230,11 +239,31 @@ async def open_for_login() -> None:
         print("✓ 세션 저장 완료. 이제 발행 테스트를 쓸 수 있습니다.")
 
 
+async def _do_publish(page, frame, visibility: str) -> None:
+    """발행 패널 열기 → 공개범위 설정 → 최종 발행."""
+    await frame.locator(SEL_PUBLISH_OPEN).first.click()
+    await asyncio.sleep(random.uniform(1.2, 2.0))
+
+    for_id = VISIBILITY_LABELS.get(visibility, "open_public")
+    try:
+        await frame.locator(f"label[for='{for_id}']").first.click()
+        await asyncio.sleep(random.uniform(0.4, 0.9))
+    except Exception:
+        print(f"  ⚠️ 공개범위({visibility}) 설정 실패 — 기본값으로 진행")
+
+    await frame.locator(SEL_PUBLISH_CONFIRM).first.click()
+    await asyncio.sleep(random.uniform(2.5, 4.0))
+
+
 async def publish_naver_blog(
-    title: str, body: str, image_paths: list[str] | None = None
+    title: str,
+    body: str,
+    image_paths: list[str] | None = None,
+    visibility: str | None = None,
 ) -> PublishResult:
     """네이버 블로그에 글 작성. dry-run 이면 발행하지 않고 스크린샷만."""
     image_paths = image_paths or []
+    visibility = visibility or settings.naver_visibility
     if not settings.naver_blog_id:
         return PublishResult(ok=False, message="NAVER_BLOG_ID 가 .env 에 설정되지 않았습니다.")
 
@@ -282,12 +311,15 @@ async def publish_naver_blog(
                     screenshot=shot_path,
                 )
 
-            await page.locator(SEL_PUBLISH_OPEN).first.click()
-            await asyncio.sleep(random.uniform(1.0, 2.0))
-            await page.locator(SEL_PUBLISH_CONFIRM).first.click()
-            await asyncio.sleep(random.uniform(2.0, 4.0))
+            await _do_publish(page, frame, visibility)
+            await page.screenshot(path=shot_path, full_page=False)
 
-            return PublishResult(ok=True, message="네이버 블로그 발행 완료", screenshot=shot_path)
+            vis_ko = {"public": "전체공개", "neighbor": "이웃공개", "both": "서로이웃", "private": "비공개"}
+            return PublishResult(
+                ok=True,
+                message=f"네이버 블로그 발행 완료 (공개범위: {vis_ko.get(visibility, visibility)}, 사진 {n_photos}장)",
+                screenshot=shot_path,
+            )
 
         except Exception as e:  # noqa: BLE001
             try:

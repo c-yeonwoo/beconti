@@ -27,7 +27,8 @@ async def main() -> None:
         body = "## 테스트\n\n네이버 발행 파이프라인 dry-run 테스트입니다."
         print("▶ 저장된 콘텐츠가 없어 샘플로 진행")
 
-    result = await publish_naver_blog(title, body, image_paths)
+    # 테스트는 항상 비공개(private)로 발행해 실수로 공개되지 않게 함
+    result = await publish_naver_blog(title, body, image_paths, visibility="private")
     print(f"\n{'✅' if result.ok else '❌'} {result.message}")
     if result.screenshot:
         print(f"📸 스크린샷: {result.screenshot}")
