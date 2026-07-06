@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PublishRouteImport } from './routes/publish'
 import { Route as CreateRouteImport } from './routes/create'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ContentIdRouteImport } from './routes/content.$id'
 
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
@@ -34,18 +35,25 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ContentIdRoute = ContentIdRouteImport.update({
+  id: '/content/$id',
+  path: '/content/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/publish': typeof PublishRoute
   '/settings': typeof SettingsRoute
+  '/content/$id': typeof ContentIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/create': typeof CreateRoute
   '/publish': typeof PublishRoute
   '/settings': typeof SettingsRoute
+  '/content/$id': typeof ContentIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/create': typeof CreateRoute
   '/publish': typeof PublishRoute
   '/settings': typeof SettingsRoute
+  '/content/$id': typeof ContentIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/create' | '/publish' | '/settings'
+  fullPaths: '/' | '/create' | '/publish' | '/settings' | '/content/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/create' | '/publish' | '/settings'
-  id: '__root__' | '/' | '/create' | '/publish' | '/settings'
+  to: '/' | '/create' | '/publish' | '/settings' | '/content/$id'
+  id: '__root__' | '/' | '/create' | '/publish' | '/settings' | '/content/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +76,7 @@ export interface RootRouteChildren {
   CreateRoute: typeof CreateRoute
   PublishRoute: typeof PublishRoute
   SettingsRoute: typeof SettingsRoute
+  ContentIdRoute: typeof ContentIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +109,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/content/$id': {
+      id: '/content/$id'
+      path: '/content/$id'
+      fullPath: '/content/$id'
+      preLoaderRoute: typeof ContentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,7 +124,18 @@ const rootRouteChildren: RootRouteChildren = {
   CreateRoute: CreateRoute,
   PublishRoute: PublishRoute,
   SettingsRoute: SettingsRoute,
+  ContentIdRoute: ContentIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

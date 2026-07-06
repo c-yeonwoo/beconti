@@ -34,7 +34,6 @@ export const Route = createFileRoute("/publish")({
 const platforms: { key: Platform; label: string }[] = [
   { key: "naver_blog", label: "네이버 블로그" },
   { key: "naver_clip", label: "네이버 클립" },
-  { key: "wordpress", label: "워드프레스" },
   { key: "instagram", label: "인스타그램" },
 ];
 

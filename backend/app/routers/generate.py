@@ -45,5 +45,16 @@ def generate(payload: GeneratePayload) -> GeneratedContent:
         createdAt=datetime.now(timezone.utc).isoformat(),
         platformStatus=default_platform_status(),
     )
-    save_content(content, payload.mediaIds, payload.placeName)
+    save_content(content, payload.mediaIds, payload.placeName, _gen_params(payload))
     return content
+
+
+def _gen_params(payload: GeneratePayload) -> dict:
+    return {
+        "keywords": payload.keywords,
+        "category": payload.category,
+        "contentType": payload.contentType,
+        "guideline": payload.guideline,
+        "requiredHashtags": payload.requiredHashtags,
+        "placeName": payload.placeName,
+    }

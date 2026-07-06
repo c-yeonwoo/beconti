@@ -7,7 +7,7 @@ export const api = axios.create({
   timeout: 60000,
 });
 
-export type Platform = "naver_blog" | "naver_clip" | "wordpress" | "instagram";
+export type Platform = "naver_blog" | "naver_clip" | "instagram";
 export type PublishStatus = "idle" | "queued" | "success" | "failed";
 
 export interface ScriptLine {
@@ -75,6 +75,28 @@ export async function updateContent(
   patch: { title: string; body: string; script: ScriptLine[] },
 ) {
   const { data } = await api.patch(`/api/content/${id}`, patch);
+  return data as GeneratedContent;
+}
+
+export interface ContentSettings {
+  keywords: string[];
+  category: string;
+  contentType: ContentType;
+  guideline: string;
+  requiredHashtags: string[];
+  placeName: string;
+  media: { mediaId: string; url: string }[];
+}
+
+export async function getContentSettings(id: string) {
+  const { data } = await api.get(`/api/content/${id}/settings`);
+  return data as ContentSettings;
+}
+
+export async function regenerateContent(id: string, payload: GeneratePayload) {
+  const { data } = await api.post(`/api/content/${id}/regenerate`, payload, {
+    timeout: 120000,
+  });
   return data as GeneratedContent;
 }
 

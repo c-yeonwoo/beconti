@@ -54,14 +54,17 @@ def init_db() -> None:
                 platform_json    TEXT NOT NULL DEFAULT '{}',
                 media_ids_json   TEXT NOT NULL DEFAULT '[]',
                 place_name       TEXT NOT NULL DEFAULT '',
+                gen_json         TEXT NOT NULL DEFAULT '{}',
                 created_at       TEXT NOT NULL
             );
             """
         )
-        # 기존 DB 마이그레이션: place_name 컬럼 없으면 추가
+        # 기존 DB 마이그레이션: 없는 컬럼 추가
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(content)").fetchall()]
         if "place_name" not in cols:
             conn.execute("ALTER TABLE content ADD COLUMN place_name TEXT NOT NULL DEFAULT ''")
+        if "gen_json" not in cols:
+            conn.execute("ALTER TABLE content ADD COLUMN gen_json TEXT NOT NULL DEFAULT '{}'")
 
 
 # ─── media ────────────────────────────────────────────────────────
@@ -87,6 +90,19 @@ def get_media_paths(media_ids: list[str]) -> list[tuple[str, str]]:
     return [by_id[mid] for mid in media_ids if mid in by_id]
 
 
+def get_media_infos(media_ids: list[str]) -> list[dict]:
+    """{id, path, mime} 목록을 media_ids 순서대로 반환."""
+    if not media_ids:
+        return []
+    with get_conn() as conn:
+        placeholders = ",".join("?" for _ in media_ids)
+        rows = conn.execute(
+            f"SELECT id, path, mime FROM media WHERE id IN ({placeholders})", media_ids
+        ).fetchall()
+    by_id = {r["id"]: {"id": r["id"], "path": r["path"], "mime": r["mime"] or ""} for r in rows}
+    return [by_id[mid] for mid in media_ids if mid in by_id]
+
+
 # ─── content ──────────────────────────────────────────────────────
 def _row_to_content(row: sqlite3.Row) -> GeneratedContent:
     return GeneratedContent(
@@ -100,12 +116,18 @@ def _row_to_content(row: sqlite3.Row) -> GeneratedContent:
     )
 
 
-def save_content(content: GeneratedContent, media_ids: list[str], place_name: str = "") -> None:
+def save_content(
+    content: GeneratedContent,
+    media_ids: list[str],
+    place_name: str = "",
+    gen_params: dict | None = None,
+) -> None:
     with get_conn() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO content
-               (id, title, body, video_url, script_json, platform_json, media_ids_json, place_name, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               (id, title, body, video_url, script_json, platform_json, media_ids_json,
+                place_name, gen_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 content.id,
                 content.title,
@@ -115,6 +137,7 @@ def save_content(content: GeneratedContent, media_ids: list[str], place_name: st
                 json.dumps(content.platformStatus, ensure_ascii=False),
                 json.dumps(media_ids, ensure_ascii=False),
                 place_name,
+                json.dumps(gen_params or {}, ensure_ascii=False),
                 content.createdAt,
             ),
         )
@@ -126,6 +149,14 @@ def get_content_place_name(content_id: str) -> str:
             "SELECT place_name FROM content WHERE id = ?", (content_id,)
         ).fetchone()
     return (row["place_name"] if row else "") or ""
+
+
+def get_content_gen_params(content_id: str) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT gen_json FROM content WHERE id = ?", (content_id,)
+        ).fetchone()
+    return json.loads(row["gen_json"]) if row and row["gen_json"] else {}
 
 
 def get_content(content_id: str) -> GeneratedContent | None:

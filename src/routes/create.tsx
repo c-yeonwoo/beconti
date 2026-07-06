@@ -409,7 +409,6 @@ function ResultView({
         platformStatus: {
           naver_blog: "idle",
           naver_clip: "idle",
-          wordpress: "idle",
           instagram: "idle",
         },
       },

@@ -2,14 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
-  ArrowLeft,
-  Loader2,
-  Save,
-  Send,
-  RefreshCw,
-  CheckCircle2,
-} from "lucide-react";
+import { ArrowLeft, Loader2, Save, Sparkles, X, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,13 +10,20 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   getContentById,
+  getContentSettings,
   updateContent,
-  publishContent,
-  type GeneratedContent,
+  regenerateContent,
+  uploadMedia,
+  type ContentType,
   type ScriptLine,
-  type Platform,
-  type PublishStatus,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/content/$id")({
@@ -31,79 +31,118 @@ export const Route = createFileRoute("/content/$id")({
   component: ContentDetailPage,
 });
 
-const PLATFORMS: { key: Platform; label: string }[] = [
-  { key: "naver_blog", label: "네이버 블로그" },
-  { key: "naver_clip", label: "네이버 클립" },
-  { key: "instagram", label: "인스타그램" },
-  { key: "wordpress", label: "워드프레스" },
-];
+interface MediaItem {
+  mediaId: string;
+  url: string;
+}
 
 function ContentDetailPage() {
   const { id } = Route.useParams();
   const qc = useQueryClient();
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["content", id],
-    queryFn: () => getContentById(id),
-  });
+  const contentQ = useQuery({ queryKey: ["content", id], queryFn: () => getContentById(id) });
+  const settingsQ = useQuery({ queryKey: ["settings", id], queryFn: () => getContentSettings(id) });
 
+  // 결과(수동 편집)
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [script, setScript] = useState<ScriptLine[]>([]);
+  // 생성 설정
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [kwInput, setKwInput] = useState("");
+  const [category, setCategory] = useState("");
+  const [contentType, setContentType] = useState<ContentType>("place_review");
+  const [guideline, setGuideline] = useState("");
+  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [placeName, setPlaceName] = useState("");
+  const [media, setMedia] = useState<MediaItem[]>([]);
 
   useEffect(() => {
-    if (data) {
-      setTitle(data.title);
-      setBody(data.body);
-      setScript(data.script);
+    const c = contentQ.data;
+    if (c) {
+      setTitle(c.title);
+      setBody(c.body);
+      setScript(c.script);
     }
-  }, [data]);
+  }, [contentQ.data]);
+
+  useEffect(() => {
+    const s = settingsQ.data;
+    if (s) {
+      setKeywords(s.keywords);
+      setCategory(s.category);
+      setContentType(s.contentType);
+      setGuideline(s.guideline);
+      setHashtags(s.requiredHashtags);
+      setPlaceName(s.placeName);
+      setMedia(s.media);
+    }
+  }, [settingsQ.data]);
 
   const saveMut = useMutation({
     mutationFn: () => updateContent(id, { title, body, script }),
-    onSuccess: (updated) => {
-      qc.setQueryData(["content", id], updated);
+    onSuccess: (u) => {
+      qc.setQueryData(["content", id], u);
       qc.invalidateQueries({ queryKey: ["content"] });
       toast.success("저장되었습니다");
     },
     onError: (e: Error) => toast.error("저장 실패", { description: e.message }),
   });
 
-  const publishMut = useMutation({
-    mutationFn: (platform: Platform) =>
-      publishContent({ contentId: id, platforms: [platform] }),
-    onSuccess: (res, platform) => {
-      qc.invalidateQueries({ queryKey: ["content", id] });
+  const regenMut = useMutation({
+    mutationFn: () =>
+      regenerateContent(id, {
+        keywords,
+        category,
+        contentType,
+        guideline,
+        requiredHashtags: hashtags,
+        placeName,
+        mediaIds: media.map((m) => m.mediaId),
+      }),
+    onSuccess: (u) => {
+      setTitle(u.title);
+      setBody(u.body);
+      setScript(u.script);
+      qc.setQueryData(["content", id], u);
       qc.invalidateQueries({ queryKey: ["content"] });
-      toast[res.ok ? "success" : "error"](
-        res.ok ? "발행 완료" : "발행 실패",
-        { description: PLATFORMS.find((p) => p.key === platform)?.label },
-      );
+      qc.invalidateQueries({ queryKey: ["settings", id] });
+      toast.success("AI 재생성 완료");
     },
-    onError: (e: Error) => toast.error("발행 요청 실패", { description: e.message }),
+    onError: (e: Error) =>
+      toast.error("재생성 실패", {
+        description: e.message + " · localhost:8000 백엔드 확인",
+      }),
   });
 
-  if (isLoading) {
+  const addFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    try {
+      const arr = Array.from(files);
+      const { mediaIds } = await uploadMedia(arr);
+      setMedia((prev) => [
+        ...prev,
+        ...mediaIds.map((mid, i) => ({ mediaId: mid, url: URL.createObjectURL(arr[i]) })),
+      ]);
+    } catch (e) {
+      toast.error("사진 업로드 실패");
+    }
+  };
+
+  const updateScript = (i: number, patch: Partial<ScriptLine>) =>
+    setScript((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+
+  if (contentQ.isLoading) {
     return (
       <div className="p-6 flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> 불러오는 중...
       </div>
     );
   }
-  if (isError || !data) {
-    return (
-      <div className="p-6 text-sm text-destructive">
-        콘텐츠를 불러오지 못했습니다. (백엔드 연결 확인)
-      </div>
-    );
+  if (contentQ.isError || !contentQ.data) {
+    return <div className="p-6 text-sm text-destructive">콘텐츠를 불러오지 못했습니다.</div>;
   }
-
-  const updateScript = (i: number, patch: Partial<ScriptLine>) =>
-    setScript((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
-
-  const publishingPlatform = publishMut.isPending
-    ? (publishMut.variables as Platform)
-    : null;
 
   return (
     <div className="p-6 space-y-6">
@@ -117,27 +156,90 @@ function ContentDetailPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">콘텐츠 상세</h1>
             <p className="text-sm text-muted-foreground">
-              내용을 수정하고 플랫폼별로 발행/재시도할 수 있습니다.
+              설정을 바꿔 AI 재생성하거나, 결과를 직접 수정해 저장하세요. (발행은 배포 관리에서)
             </p>
           </div>
         </div>
         <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
-          {saveMut.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}{" "}
+          {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{" "}
           저장
         </Button>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* 편집 영역 */}
+        {/* 생성 설정 */}
+        <Card className="h-fit">
+          <CardHeader>
+            <CardTitle className="text-base">생성 설정 (AI 재생성)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>사진 ({media.length})</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {media.map((m) => (
+                  <div key={m.mediaId} className="relative group aspect-square rounded-md overflow-hidden border bg-muted">
+                    <img src={m.url} alt="" className="h-full w-full object-cover" />
+                    <button
+                      onClick={() => setMedia((prev) => prev.filter((x) => x.mediaId !== m.mediaId))}
+                      className="absolute top-0.5 right-0.5 h-5 w-5 rounded-full bg-background/90 grid place-items-center opacity-0 group-hover:opacity-100"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                <label className="aspect-square rounded-md border-2 border-dashed grid place-items-center cursor-pointer hover:bg-muted/40">
+                  <Upload className="h-4 w-4 text-muted-foreground" />
+                  <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => addFiles(e.target.files)} />
+                </label>
+              </div>
+            </div>
+
+            <ChipField label="핵심 키워드" items={keywords} setItems={setKeywords} value={kwInput} setValue={setKwInput} placeholder="예: 성수동 카페" />
+
+            <div className="space-y-2">
+              <Label>카테고리</Label>
+              <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="예: 맛집" />
+            </div>
+
+            <div className="space-y-2">
+              <Label>유형</Label>
+              <Select value={contentType} onValueChange={(v) => setContentType(v as ContentType)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="place_review">장소 리뷰</SelectItem>
+                  <SelectItem value="product_review">제품 리뷰</SelectItem>
+                  <SelectItem value="vlog">브이로그 (영상 중심)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <ChipField label="필수 해시태그" items={hashtags} setItems={setHashtags} value={tagInput} setValue={setTagInput} placeholder="예: 성수동카페" hash />
+
+            <div className="space-y-2">
+              <Label>매장명 (지도)</Label>
+              <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="예: 스타벅스 강남대로점" />
+            </div>
+
+            <div className="space-y-2">
+              <Label>캠페인 가이드라인</Label>
+              <Textarea value={guideline} onChange={(e) => setGuideline(e.target.value)} className="min-h-[90px] text-sm" placeholder="비우면 유형별 기본 규칙" />
+            </div>
+
+            <Button className="w-full" disabled={regenMut.isPending || media.length === 0} onClick={() => regenMut.mutate()}>
+              {regenMut.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> 재생성 중...</>
+              ) : (
+                <><Sparkles className="h-4 w-4" /> AI 재생성</>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground">재생성하면 제목·본문·대본이 새로 만들어집니다.</p>
+          </CardContent>
+        </Card>
+
+        {/* 결과 (수동 편집) */}
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">블로그 글</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base">블로그 글</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
                 <Label>제목</Label>
@@ -145,113 +247,74 @@ function ContentDetailPage() {
               </div>
               <div className="space-y-2">
                 <Label>본문 (마크다운)</Label>
-                <Textarea
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  className="min-h-[420px] font-mono text-sm"
-                />
+                <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[420px] font-mono text-sm" />
               </div>
             </CardContent>
           </Card>
 
           {script.length > 0 && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">숏폼 대본</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle className="text-base">숏폼 대본</CardTitle></CardHeader>
               <CardContent className="space-y-2">
                 {script.map((line, i) => (
                   <div key={i} className="grid grid-cols-[70px_1fr_1fr] gap-2">
-                    <Input
-                      value={line.time}
-                      onChange={(e) => updateScript(i, { time: e.target.value })}
-                      className="h-9 text-xs"
-                    />
-                    <Input
-                      value={line.caption}
-                      onChange={(e) => updateScript(i, { caption: e.target.value })}
-                      placeholder="자막"
-                      className="h-9 text-xs"
-                    />
-                    <Input
-                      value={line.narration}
-                      onChange={(e) => updateScript(i, { narration: e.target.value })}
-                      placeholder="나레이션"
-                      className="h-9 text-xs"
-                    />
+                    <Input value={line.time} onChange={(e) => updateScript(i, { time: e.target.value })} className="h-9 text-xs" />
+                    <Input value={line.caption} onChange={(e) => updateScript(i, { caption: e.target.value })} placeholder="자막" className="h-9 text-xs" />
+                    <Input value={line.narration} onChange={(e) => updateScript(i, { narration: e.target.value })} placeholder="나레이션" className="h-9 text-xs" />
                   </div>
                 ))}
               </CardContent>
             </Card>
           )}
         </div>
-
-        {/* 플랫폼별 발행 */}
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle className="text-base">플랫폼별 발행</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {PLATFORMS.map((p) => {
-              const status = data.platformStatus[p.key];
-              const done = status === "success";
-              const pending = publishingPlatform === p.key;
-              return (
-                <div
-                  key={p.key}
-                  className="flex items-center justify-between gap-2 border rounded-md p-2.5"
-                >
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="font-medium">{p.label}</span>
-                    <StatusBadge status={status} />
-                  </div>
-                  {done ? (
-                    <span className="flex items-center gap-1 text-xs text-green-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> 완료
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant={status === "failed" ? "ghost" : "outline"}
-                      disabled={publishMut.isPending}
-                      onClick={() => publishMut.mutate(p.key)}
-                    >
-                      {pending ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : status === "failed" ? (
-                        <>
-                          <RefreshCw className="h-3 w-3" /> 재시도
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-3 w-3" /> 발행
-                        </>
-                      )}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-            <p className="text-xs text-muted-foreground pt-1">
-              성공한 플랫폼은 재발행 버튼이 숨겨집니다. 발행 전 수정사항은 "저장"을
-              먼저 눌러주세요.
-            </p>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: PublishStatus }) {
-  const map: Record<PublishStatus, { label: string; cls: string }> = {
-    idle: { label: "대기", cls: "bg-muted text-muted-foreground" },
-    queued: { label: "진행 중", cls: "bg-amber-100 text-amber-700" },
-    success: { label: "성공", cls: "bg-green-100 text-green-700" },
-    failed: { label: "실패", cls: "bg-red-100 text-red-700" },
+function ChipField({
+  label, items, setItems, value, setValue, placeholder, hash,
+}: {
+  label: string;
+  items: string[];
+  setItems: (v: string[]) => void;
+  value: string;
+  setValue: (v: string) => void;
+  placeholder?: string;
+  hash?: boolean;
+}) {
+  const add = () => {
+    let v = value.trim();
+    if (!v) return;
+    if (hash && !v.startsWith("#")) v = `#${v}`;
+    if (items.includes(v)) return;
+    setItems([...items, v]);
+    setValue("");
   };
-  const s = map[status] ?? map.idle;
-  return <Badge className={`${s.cls} border-0 text-[10px]`}>{s.label}</Badge>;
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault();
+              add();
+            }
+          }}
+        />
+        <Button type="button" variant="outline" onClick={add}>추가</Button>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((it) => (
+          <Badge key={it} variant="secondary" className="cursor-pointer" onClick={() => setItems(items.filter((x) => x !== it))}>
+            {it} <X className="h-3 w-3 ml-1" />
+          </Badge>
+        ))}
+      </div>
+    </div>
+  );
 }
-
-export type { GeneratedContent };

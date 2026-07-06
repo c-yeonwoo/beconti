@@ -13,7 +13,7 @@ from ..services.naver import publish_naver_blog
 router = APIRouter(prefix="/api", tags=["publish"])
 
 # Phase 2~3 에서 구현될 플랫폼 (지금은 미지원 표시)
-_NOT_IMPLEMENTED = {"naver_clip", "wordpress", "instagram"}
+_NOT_IMPLEMENTED = {"naver_clip", "instagram"}
 
 
 @router.post("/publish", response_model=PublishResponse)

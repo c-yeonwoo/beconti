@@ -22,7 +22,7 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const PLATFORMS: Platform[] = ["naver_blog", "naver_clip", "wordpress", "instagram"];
+const PLATFORMS: Platform[] = ["naver_blog", "naver_clip", "instagram"];
 
 function Dashboard() {
   const { data: content = [], isError } = useQuery({
@@ -113,7 +113,12 @@ function Dashboard() {
           ) : (
             <ul className="divide-y">
               {recent.map((c: GeneratedContent) => (
-                <li key={c.id} className="py-3 flex items-center justify-between gap-4">
+                <li key={c.id}>
+                  <Link
+                    to="/content/$id"
+                    params={{ id: c.id }}
+                    className="py-3 flex items-center justify-between gap-4 hover:bg-muted/40 rounded-md px-2 -mx-2"
+                  >
                   <div className="min-w-0">
                     <p className="font-medium truncate">{c.title || "(제목 없음)"}</p>
                     <p className="text-xs text-muted-foreground">
@@ -134,6 +139,7 @@ function Dashboard() {
                       return <span key={p} className={`h-2 w-2 rounded-full ${color}`} title={`${p}: ${s}`} />;
                     })}
                   </div>
+                  </Link>
                 </li>
               ))}
             </ul>

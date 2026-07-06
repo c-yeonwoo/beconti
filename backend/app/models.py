@@ -10,10 +10,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-Platform = Literal["naver_blog", "naver_clip", "wordpress", "instagram"]
+Platform = Literal["naver_blog", "naver_clip", "instagram"]
 PublishStatus = Literal["idle", "queued", "success", "failed"]
 
-ALL_PLATFORMS: tuple[Platform, ...] = ("naver_blog", "naver_clip", "wordpress", "instagram")
+ALL_PLATFORMS: tuple[Platform, ...] = ("naver_blog", "naver_clip", "instagram")
 
 
 class ScriptLine(BaseModel):
