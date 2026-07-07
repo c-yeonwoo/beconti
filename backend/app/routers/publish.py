@@ -13,9 +13,6 @@ from ..services.naver import publish_naver_blog
 
 router = APIRouter(prefix="/api", tags=["publish"])
 
-# Phase 2~3 에서 구현될 플랫폼 (지금은 미지원 표시)
-_NOT_IMPLEMENTED = {"naver_clip", "instagram"}
-
 
 @router.post("/publish", response_model=PublishResponse)
 async def publish(payload: PublishPayload) -> PublishResponse:
@@ -41,12 +38,13 @@ async def publish(payload: PublishPayload) -> PublishResponse:
             update_platform_status(payload.contentId, platform, status)
             all_ok = all_ok and result.ok
 
-        elif platform in _NOT_IMPLEMENTED:
-            # 아직 미구현 → 실패로 표시 (Phase 2~3)
-            update_platform_status(payload.contentId, platform, "failed")
-            all_ok = False
+        elif platform == "naver_clip":
+            # 클립은 반자동(CLI 핸드오프)로 업로드 → API 로는 실패가 아닌 '대기(수동)'.
+            # 실제 성공 전환은 CLI(naver_clip_test.py) 완료 시 이뤄짐.
+            update_platform_status(payload.contentId, platform, "queued")
 
         else:
+            # 인스타 등 미구현 → 실패 표시
             update_platform_status(payload.contentId, platform, "failed")
             all_ok = False
 
