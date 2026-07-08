@@ -66,6 +66,7 @@ def _build_prompt(
     hashtags: list[str],
     has_video: bool,
     script_style: str = "polite",
+    segment_times: list[tuple[float, float]] | None = None,
 ) -> str:
     kw = ", ".join(keywords) if keywords else "(없음)"
     tags = " ".join(hashtags) if hashtags else "(지정 없음)"
@@ -78,12 +79,28 @@ def _build_prompt(
     if has_video:
         style_desc = SCRIPT_STYLES.get(script_style, SCRIPT_STYLES["polite"])
         script_json = '  "script": [\n    {{"time": "0-3s", "caption": "자막(짧게)", "narration": "나레이션"}}\n  ]'
-        script_rule = (
-            "- 첨부 이미지 중 일부는 **영상에서 추출한 장면**입니다. 영상 내용을 실제로 반영해 작성하세요.\n"
-            "- 첨부된 영상을 편집한 **30초 이상** 숏폼용으로 script 를 8~12줄 작성 "
-            "(배경음+자막 전제). caption/narration 에 이모지 금지.\n"
-            f"- **script 의 caption/narration 말투**: {style_desc}"
-        )
+        if segment_times:
+            # 영상 이미지 중 뒷부분(장면 프레임)이 실제 화면전환 구간과 1:1 대응.
+            seg_list = "\n".join(
+                f"  {i + 1}. {s:.1f}-{e:.1f}초" for i, (s, e) in enumerate(segment_times)
+            )
+            script_rule = (
+                f"- 첨부 이미지 중 마지막 {len(segment_times)}장은 **영상의 실제 화면전환 구간별 장면**이며,\n"
+                f"  순서대로 아래 시간대에 정확히 대응합니다:\n{seg_list}\n"
+                f"- script 는 **정확히 {len(segment_times)}줄**, 위 순서·구간과 1:1로 작성하고 "
+                "각 줄의 \"time\" 필드는 위에 주어진 시간대를 \"S.S-E.Es\" 형식 그대로 사용하세요 "
+                "(임의로 시간을 만들지 마세요).\n"
+                "- 각 장면 이미지의 실제 내용을 반영해 caption/narration을 작성하세요 "
+                "(배경음+자막 전제). 이모지 금지.\n"
+                f"- **script 의 caption/narration 말투**: {style_desc}"
+            )
+        else:
+            script_rule = (
+                "- 첨부 이미지 중 일부는 **영상에서 추출한 장면**입니다. 영상 내용을 실제로 반영해 작성하세요.\n"
+                "- 첨부된 영상을 편집한 **30초 이상** 숏폼용으로 script 를 8~12줄 작성 "
+                "(배경음+자막 전제). caption/narration 에 이모지 금지.\n"
+                f"- **script 의 caption/narration 말투**: {style_desc}"
+            )
     else:
         script_json = '  "script": []'
         script_rule = "- 영상이 첨부되지 않았으므로 script 는 **반드시 빈 배열 [] 로** 두세요."
@@ -191,16 +208,24 @@ def generate_draft(
     client = genai.Client(api_key=settings.gemini_api_key)
 
     with tempfile.TemporaryDirectory() as td:
-        # 영상은 프레임 몇 장을 뽑아 이미지로 전달 → Gemini 가 영상 내용을 반영
+        # 영상은 실제 화면전환 구간을 감지해, 구간별 대표 프레임을 이미지로 전달
+        # → Gemini 가 대본을 영상 내용 + 실제 장면 길이에 맞춰 작성(균등 n분할 방지).
         frame_paths: list[str] = []
+        segment_times: list[tuple[float, float]] = []
         if videos:
-            from .video import extract_video_frames
+            from .video import compute_script_segments, extract_frame_at
 
-            for v in videos:
-                try:
-                    frame_paths += extract_video_frames(v, td, n=6)
-                except Exception as e:  # noqa: BLE001
-                    print(f"  ⚠️ 영상 프레임 추출 실패: {str(e)[:60]}")
+            try:
+                segments = compute_script_segments(videos)
+                for i, seg in enumerate(segments):
+                    mid = (seg["local_start"] + seg["local_end"]) / 2
+                    p = str(Path(td) / f"seg_{i}.jpg")
+                    if extract_frame_at(seg["video"], mid, p):
+                        frame_paths.append(p)
+                        segment_times.append((seg["start"], seg["end"]))
+            except Exception as e:  # noqa: BLE001
+                print(f"  ⚠️ 장면 구간 분석 실패: {str(e)[:60]}")
+                segment_times = []
 
         parts: list[object] = []
         for path in images + frame_paths:
@@ -210,7 +235,8 @@ def generate_draft(
             parts.append(types.Part.from_bytes(data=data, mime_type=mime))
         parts.append(
             _build_prompt(
-                keywords, category, content_type, guideline, hashtags, has_video, script_style
+                keywords, category, content_type, guideline, hashtags, has_video,
+                script_style, segment_times or None,
             )
         )
 

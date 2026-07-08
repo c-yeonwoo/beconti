@@ -202,6 +202,80 @@ def extract_video_frames(video_path: str, out_dir: str, n: int = 6, width: int =
     return out
 
 
+def extract_frame_at(video_path: str, t: float, out_path: str, width: int = 768) -> bool:
+    """영상의 특정 시점(초) 프레임 1장 추출."""
+    cmd = ["ffmpeg", "-y", "-ss", f"{max(t, 0):.2f}", "-i", video_path, "-frames:v", "1"]
+    if width and width > 0:
+        cmd += ["-vf", f"scale={width}:-1"]
+    cmd += ["-q:v", "3", out_path]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return Path(out_path).exists()
+    except Exception:
+        return False
+
+
+def detect_scene_cuts(video_path: str, threshold: float = 0.35) -> list[float]:
+    """ffmpeg 장면전환 감지 → 컷 발생 시점(초) 목록."""
+    proc = subprocess.run(
+        ["ffmpeg", "-i", video_path, "-filter:v", f"select='gt(scene,{threshold})',showinfo",
+         "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    return [float(m) for m in re.findall(r"pts_time:([\d.]+)", proc.stderr)]
+
+
+def build_scene_segments(
+    duration: float, video_path: str, min_seg: float = 1.5, max_segments: int = 10
+) -> list[tuple[float, float]]:
+    """실제 화면전환 시점 기준으로 (start, end) 구간을 만든다.
+
+    여러 threshold 로 시도해 구간 수가 영상 길이에 맞는 자연스러운 범위에 들어오면
+    채택하고, 감지가 애매하면(컷이 거의 없거나 너무 많으면) 길이 기반 균등분할로 폴백한다.
+    """
+    if duration <= 0:
+        return [(0.0, MIN_TOTAL_SEC)]
+    target_n = max(3, min(max_segments, round(duration / 4.0)))
+    lo, hi = max(3, target_n - 2), min(max_segments, target_n + 3)
+
+    for threshold in (0.35, 0.25, 0.45, 0.2, 0.55, 0.15):
+        cuts = detect_scene_cuts(video_path, threshold)
+        bounds = sorted({0.0, duration} | {c for c in cuts if min_seg <= c <= duration - min_seg})
+        pruned = [bounds[0]]
+        for b in bounds[1:]:
+            if b - pruned[-1] >= min_seg:
+                pruned.append(b)
+        if pruned[-1] != duration:
+            pruned[-1] = duration
+        n = len(pruned) - 1
+        if lo <= n <= hi:
+            return [(pruned[i], pruned[i + 1]) for i in range(n)]
+
+    # 폴백: 장면 감지가 애매함 → 영상 길이 기반 균등분할(고정 개수 아님)
+    step = duration / target_n
+    return [(i * step, (i + 1) * step) for i in range(target_n)]
+
+
+def compute_script_segments(video_paths: list[str]) -> list[dict]:
+    """영상(들)의 실제 장면전환 기준 구간 목록. 콘텐츠 순서대로 누적 시간 오프셋 부여.
+
+    generate(분석)와 render(타이밍) 양쪽에서 동일 입력에 결정적으로 같은 결과를 내
+    대본 줄 수와 실제 영상 구간이 1:1로 맞물리게 한다.
+    """
+    segments: list[dict] = []
+    offset = 0.0
+    for v in video_paths:
+        dur = _probe_duration(v)
+        if dur <= 0:
+            continue
+        for s, e in build_scene_segments(dur, v):
+            segments.append(
+                {"video": v, "local_start": s, "local_end": e, "start": s + offset, "end": e + offset}
+            )
+        offset += dur
+    return segments
+
+
 def _has_audio(path: str) -> bool:
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
@@ -328,9 +402,17 @@ def render_from_videos(
 
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         dur = _probe_duration(base) or MIN_TOTAL_SEC
-        win = dur / max(len(lines), 1)
 
-        # 1) 자막 오버레이 (라인별 시간창)
+        # 대본 줄 수와 실제 장면전환 구간 수가 일치하면 그 구간을 그대로 시간창으로 사용
+        # (화면 전환에 맞춘 자막/나레이션 타이밍). 불일치(수동 편집 등) 시 균등분할로 폴백.
+        segments = compute_script_segments(video_paths)
+        if len(segments) == len(lines) and lines:
+            windows = [(seg["start"], seg["end"]) for seg in segments]
+        else:
+            win = dur / max(len(lines), 1)
+            windows = [(i * win, (i + 1) * win) for i in range(len(lines))]
+
+        # 1) 자막 오버레이 (라인별 실제 장면 구간)
         capped = str(tmpd / "capped.mp4")
         overlay_inputs, chains, cur, n_png = ["-i", base], [], "0:v", 0
         for i, line in enumerate(lines):
@@ -341,7 +423,7 @@ def render_from_videos(
             png = str(tmpd / f"cap_{i}.png")
             _make_caption_png(cap, png, caption_style)
             overlay_inputs += ["-i", png]
-            s, e = i * win, (i + 1) * win
+            s, e = windows[i]
             nxt = f"v{n_png}"
             chains.append(
                 f"[{cur}][{n_png}:v]overlay=(W-w)/2:H-h-180:enable='between(t,{s:.2f},{e:.2f})'[{nxt}]"
@@ -357,8 +439,8 @@ def render_from_videos(
         else:
             capped = base
 
-        # 2) 나레이션 TTS (라인별, 자막과 같은 시간창 시작점)
-        # 시간창보다 길면 추가 가속해 다음 줄과 겹치거나 끝에서 잘리지 않게 맞춘다.
+        # 2) 나레이션 TTS (라인별, 같은 장면 구간 시작점)
+        # 구간 길이보다 길면 추가 가속해 다음 줄과 겹치거나 끝에서 잘리지 않게 맞춘다.
         narration: list[tuple[str, float]] = []
         if tts.is_enabled():
             for i, line in enumerate(lines):
@@ -367,8 +449,9 @@ def render_from_videos(
                     continue
                 mp3 = str(tmpd / f"tts_{i}.mp3")
                 if tts.synthesize(txt, mp3):
-                    mp3 = _fit_narration_to_window(mp3, win, tmpd, str(i))
-                    narration.append((mp3, i * win))
+                    s, e = windows[i]
+                    mp3 = _fit_narration_to_window(mp3, e - s, tmpd, str(i))
+                    narration.append((mp3, s))
 
         # 3) 배경음 + 믹스
         bgm = _find_bgm()
