@@ -70,7 +70,6 @@ function ContentDetailPage() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [videoVersion, setVideoVersion] = useState(0); // 재생성 시 캐시 무효화용
-  const [preview, setPreview] = useState<"shorts" | "blog">("blog");
 
   const guidelinePlaceholder =
     (contentType === "vlog" ? defaultsQ.data?.video : defaultsQ.data?.blog) ??
@@ -325,60 +324,23 @@ function ContentDetailPage() {
 
         {/* 결과 (수동 편집) */}
         <div className="lg:col-span-2 space-y-6">
+          {/* 숏폼: 영상 미리보기 + 대본 */}
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
-              <CardTitle className="text-base">미리보기 (발행 전 확인)</CardTitle>
-              <div className="flex gap-0.5 rounded-lg border p-0.5 bg-muted/40">
-                <button
-                  onClick={() => setPreview("blog")}
-                  className={`px-3 py-1 text-sm rounded-md transition ${
-                    preview === "blog" ? "bg-background shadow font-medium" : "text-muted-foreground"
-                  }`}
-                >
-                  블로그
-                </button>
-                <button
-                  onClick={() => setPreview("shorts")}
-                  className={`px-3 py-1 text-sm rounded-md transition ${
-                    preview === "shorts" ? "bg-background shadow font-medium" : "text-muted-foreground"
-                  }`}
-                >
-                  숏폼
-                </button>
-              </div>
-            </CardHeader>
+            <CardHeader><CardTitle className="text-base">숏폼 미리보기</CardTitle></CardHeader>
             <CardContent>
-              {preview === "shorts" ? (
-                contentQ.data.videoUrl ? (
-                  <video
-                    key={videoVersion}
-                    src={`${contentQ.data.videoUrl}?v=${videoVersion}`}
-                    controls
-                    playsInline
-                    className="mx-auto aspect-[9/16] max-h-[560px] rounded-md border bg-black"
-                  />
-                ) : (
-                  <div className="text-center text-sm text-muted-foreground py-16 border rounded-md">
-                    아직 숏폼 영상이 없습니다. 상단 <b>숏폼 영상 생성</b>을 눌러 만드세요.
-                  </div>
-                )
+              {contentQ.data.videoUrl ? (
+                <video
+                  key={videoVersion}
+                  src={`${contentQ.data.videoUrl}?v=${videoVersion}`}
+                  controls
+                  playsInline
+                  className="mx-auto aspect-[9/16] max-h-[520px] rounded-md border bg-black"
+                />
               ) : (
-                <BlogPreview title={title} body={body} media={media} />
+                <div className="text-center text-sm text-muted-foreground py-16 border rounded-md">
+                  아직 숏폼 영상이 없습니다. 상단 <b>숏폼 영상 생성</b>을 눌러 만드세요.
+                </div>
               )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">블로그 글</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-2">
-                <Label>제목</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>본문 (마크다운)</Label>
-                <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[420px] font-mono text-sm" />
-              </div>
             </CardContent>
           </Card>
 
@@ -425,44 +387,23 @@ function ContentDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* 블로그 글 수정 폼 */}
+          <Card>
+            <CardHeader><CardTitle className="text-base">블로그 글</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label>제목</Label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>본문 (마크다운)</Label>
+                <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[420px] font-mono text-sm" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
-    </div>
-  );
-}
-
-function BlogPreview({
-  title,
-  body,
-  media,
-}: {
-  title: string;
-  body: string;
-  media: MediaItem[];
-}) {
-  const lines = body.split("\n");
-  return (
-    <div className="max-h-[560px] overflow-y-auto rounded-md border p-5 bg-background space-y-3">
-      <h2 className="text-xl font-bold">{title || "(제목 없음)"}</h2>
-      {lines.map((raw, i) => {
-        const line = raw.trim();
-        if (!line) return <div key={i} className="h-2" />;
-        const photo = line.match(/^\[사진\s*(\d+)\]$/);
-        if (photo) {
-          const idx = parseInt(photo[1], 10) - 1;
-          const m = media[idx];
-          return m ? (
-            <img key={i} src={m.url} alt="" className="rounded-md border max-h-72 w-auto mx-auto" />
-          ) : (
-            <div key={i} className="text-xs text-muted-foreground border rounded-md py-6 text-center bg-muted/30">
-              [사진 {photo[1]}] (사진 없음)
-            </div>
-          );
-        }
-        if (line.startsWith("## ")) return <h3 key={i} className="text-base font-semibold pt-1">{line.slice(3)}</h3>;
-        if (line.startsWith("# ")) return <h2 key={i} className="text-lg font-bold pt-1">{line.slice(2)}</h2>;
-        return <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap">{line.replace(/\*\*/g, "")}</p>;
-      })}
     </div>
   );
 }
