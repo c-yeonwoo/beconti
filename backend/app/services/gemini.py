@@ -36,6 +36,7 @@ DEFAULT_GUIDELINE_VIDEO = """- 15~30초 세로 영상(9:16) 기준
 - 마지막 컷에 필수 해시태그 안내"""
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}
+_VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
 
 
 def default_guideline(content_type: str) -> str:
@@ -61,7 +62,8 @@ def _build_prompt(
     if has_video:
         script_json = '  "script": [\n    {{"time": "0-3s", "caption": "자막(짧게)", "narration": "나레이션"}}\n  ]'
         script_rule = (
-            "- 첨부된 영상들을 편집한 **30초 이상** 숏폼용으로 script 를 8~12줄 작성 "
+            "- 첨부 이미지 중 일부는 **영상에서 추출한 장면**입니다. 영상 내용을 실제로 반영해 작성하세요.\n"
+            "- 첨부된 영상을 편집한 **30초 이상** 숏폼용으로 script 를 8~12줄 작성 "
             "(배경음+자막 전제). caption/narration 에 이모지 금지."
         )
     else:
@@ -152,10 +154,13 @@ def generate_draft(
     guideline 이 비어 있으면 유형별 기본 가이드라인을 사용한다.
     숏폼 대본(script)은 has_video=True(영상 첨부)일 때만 생성된다.
     """
+    import tempfile
+
     hashtags = hashtags or []
     content_type = TYPE_ALIASES.get(content_type, content_type)
     guideline = guideline.strip() or default_guideline(content_type)
     images = [p for p in image_paths if Path(p).suffix.lower() in _IMAGE_EXTS]
+    videos = [p for p in image_paths if Path(p).suffix.lower() in _VIDEO_EXTS]
 
     if not settings.gemini_api_key:
         return _stub(keywords, content_type, hashtags, len(images), has_video)
@@ -166,36 +171,50 @@ def generate_draft(
 
     client = genai.Client(api_key=settings.gemini_api_key)
 
-    parts: list[object] = []
-    for path in images:
-        data = Path(path).read_bytes()
-        suffix = Path(path).suffix.lower().lstrip(".")
-        mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
-        parts.append(types.Part.from_bytes(data=data, mime_type=mime))
-    parts.append(_build_prompt(keywords, category, content_type, guideline, hashtags, has_video))
+    with tempfile.TemporaryDirectory() as td:
+        # 영상은 프레임 몇 장을 뽑아 이미지로 전달 → Gemini 가 영상 내용을 반영
+        frame_paths: list[str] = []
+        if videos:
+            from .video import extract_video_frames
 
-    config = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        temperature=0.9,
-    )
+            for v in videos:
+                try:
+                    frame_paths += extract_video_frames(v, td, n=6)
+                except Exception as e:  # noqa: BLE001
+                    print(f"  ⚠️ 영상 프레임 추출 실패: {str(e)[:60]}")
 
-    # 2.5 모델은 과부하 시 503 UNAVAILABLE 을 자주 반환 → 지수 백오프 재시도
-    resp = None
-    last_err: Exception | None = None
-    for attempt in range(5):
-        try:
-            resp = client.models.generate_content(
-                model=settings.gemini_model, contents=parts, config=config
-            )
-            break
-        except Exception as e:  # noqa: BLE001
-            last_err = e
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                time.sleep(2 * (attempt + 1))
-                continue
-            raise
-    if resp is None:
-        raise RuntimeError(f"Gemini 호출 실패(과부하 지속): {last_err}")
+        parts: list[object] = []
+        for path in images + frame_paths:
+            data = Path(path).read_bytes()
+            suffix = Path(path).suffix.lower().lstrip(".")
+            mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
+            parts.append(types.Part.from_bytes(data=data, mime_type=mime))
+        parts.append(
+            _build_prompt(keywords, category, content_type, guideline, hashtags, has_video)
+        )
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.9,
+        )
+
+        # 2.5 모델은 과부하 시 503 UNAVAILABLE 을 자주 반환 → 지수 백오프 재시도
+        resp = None
+        last_err: Exception | None = None
+        for attempt in range(5):
+            try:
+                resp = client.models.generate_content(
+                    model=settings.gemini_model, contents=parts, config=config
+                )
+                break
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if "503" in str(e) or "UNAVAILABLE" in str(e):
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise
+        if resp is None:
+            raise RuntimeError(f"Gemini 호출 실패(과부하 지속): {last_err}")
 
     data = _parse_json(resp.text or "")
     data.setdefault("title", ", ".join(keywords) or "제목 없음")
