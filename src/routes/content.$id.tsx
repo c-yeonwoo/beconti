@@ -66,6 +66,7 @@ function ContentDetailPage() {
   const [placeUrl, setPlaceUrl] = useState("");
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [videoVersion, setVideoVersion] = useState(0); // 재생성 시 캐시 무효화용
 
   const guidelinePlaceholder =
     (contentType === "vlog" ? defaultsQ.data?.video : defaultsQ.data?.blog) ??
@@ -138,7 +139,8 @@ function ContentDetailPage() {
     onSuccess: (u) => {
       qc.setQueryData(["content", id], u);
       qc.invalidateQueries({ queryKey: ["content"] });
-      toast.success("숏폼 영상 생성 완료", { description: "수정한 자막·대본이 반영됩니다." });
+      setVideoVersion((v) => v + 1); // 같은 파일명이라 캐시 무효화
+      toast.success("숏폼 영상 생성 완료", { description: "아래 미리보기에서 확인하세요." });
     },
     onError: (e: Error) =>
       toast.error("숏폼 생성 실패", { description: e.message }),
@@ -304,6 +306,26 @@ function ContentDetailPage() {
 
         {/* 결과 (수동 편집) */}
         <div className="lg:col-span-2 space-y-6">
+          {contentQ.data.videoUrl && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">숏폼 미리보기</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  발행 전 확인용. 자막·대본 수정 후 상단 "숏폼 영상 생성"을 다시 누르면 갱신됩니다.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <video
+                  key={videoVersion}
+                  src={`${contentQ.data.videoUrl}?v=${videoVersion}`}
+                  controls
+                  playsInline
+                  className="mx-auto aspect-[9/16] max-h-[520px] rounded-md border bg-black"
+                />
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader><CardTitle className="text-base">블로그 글</CardTitle></CardHeader>
             <CardContent className="space-y-3">
