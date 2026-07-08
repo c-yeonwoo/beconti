@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Save, Sparkles, X, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, Save, Sparkles, X, Upload, Clapperboard, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import {
   getContentSettings,
   updateContent,
   regenerateContent,
+  makeVideo,
   uploadMedia,
   getDefaults,
   CATEGORIES,
@@ -61,6 +62,7 @@ function ContentDetailPage() {
   const [placeName, setPlaceName] = useState("");
   const [placeUrl, setPlaceUrl] = useState("");
   const [media, setMedia] = useState<MediaItem[]>([]);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
 
   const guidelinePlaceholder =
     (contentType === "vlog" ? defaultsQ.data?.video : defaultsQ.data?.blog) ??
@@ -126,6 +128,17 @@ function ContentDetailPage() {
       }),
   });
 
+  const videoMut = useMutation({
+    mutationFn: () => makeVideo(id),
+    onSuccess: (u) => {
+      qc.setQueryData(["content", id], u);
+      qc.invalidateQueries({ queryKey: ["content"] });
+      toast.success("숏폼 영상 생성 완료", { description: "수정한 자막·대본이 반영됩니다." });
+    },
+    onError: (e: Error) =>
+      toast.error("숏폼 생성 실패", { description: e.message }),
+  });
+
   const addFiles = async (files: FileList | null) => {
     if (!files || !files.length) return;
     try {
@@ -142,6 +155,16 @@ function ContentDetailPage() {
 
   const updateScript = (i: number, patch: Partial<ScriptLine>) =>
     setScript((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+
+  const moveScript = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    setScript((prev) => {
+      const next = [...prev];
+      const [row] = next.splice(from, 1);
+      next.splice(to, 0, row);
+      return next;
+    });
+  };
 
   if (contentQ.isLoading) {
     return (
@@ -166,14 +189,24 @@ function ContentDetailPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">콘텐츠 상세</h1>
             <p className="text-sm text-muted-foreground">
-              설정을 바꿔 AI 재생성하거나, 결과를 직접 수정해 저장하세요. (발행은 배포 관리에서)
+              수정 후 <b>저장</b> → <b>숏폼 영상 생성</b>으로 영상 반영. 설정 바꿔 처음부터는 <b>AI 재생성</b>. (발행은 배포 관리)
             </p>
           </div>
         </div>
-        <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
-          {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{" "}
-          저장
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => regenMut.mutate()} disabled={regenMut.isPending || media.length === 0}>
+            {regenMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{" "}
+            AI 재생성
+          </Button>
+          <Button variant="outline" onClick={() => videoMut.mutate()} disabled={videoMut.isPending}>
+            {videoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}{" "}
+            숏폼 영상 생성
+          </Button>
+          <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+            {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{" "}
+            저장
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -246,15 +279,9 @@ function ContentDetailPage() {
               <Label>캠페인 가이드라인</Label>
               <Textarea value={guideline} onChange={(e) => setGuideline(e.target.value)} className="min-h-[110px] text-sm" placeholder={guidelinePlaceholder} />
             </div>
-
-            <Button className="w-full" disabled={regenMut.isPending || media.length === 0} onClick={() => regenMut.mutate()}>
-              {regenMut.isPending ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> 재생성 중...</>
-              ) : (
-                <><Sparkles className="h-4 w-4" /> AI 재생성</>
-              )}
-            </Button>
-            <p className="text-xs text-muted-foreground">재생성하면 제목·본문·대본이 새로 만들어집니다.</p>
+            <p className="text-xs text-muted-foreground">
+              설정을 바꾸고 상단 <b>AI 재생성</b>을 누르면 제목·본문·대본이 새로 만들어집니다.
+            </p>
           </CardContent>
         </Card>
 
@@ -276,10 +303,39 @@ function ContentDetailPage() {
 
           {script.length > 0 && (
             <Card>
-              <CardHeader><CardTitle className="text-base">숏폼 대본</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
+              <CardHeader>
+                <CardTitle className="text-base">숏폼 대본</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  왼쪽 손잡이를 잡고 드래그해 자막 순서를 바꿀 수 있어요. 수정 후 저장 → 숏폼 영상 생성.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                <div className="grid grid-cols-[24px_70px_1fr_1fr] gap-2 px-1 text-[11px] text-muted-foreground">
+                  <span /> <span>시간</span> <span>자막</span> <span>나레이션</span>
+                </div>
                 {script.map((line, i) => (
-                  <div key={i} className="grid grid-cols-[70px_1fr_1fr] gap-2">
+                  <div
+                    key={i}
+                    className={`grid grid-cols-[24px_70px_1fr_1fr] gap-2 items-center rounded-md ${
+                      dragIdx === i ? "opacity-40" : ""
+                    }`}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragIdx !== null) moveScript(dragIdx, i);
+                      setDragIdx(null);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={() => setDragIdx(i)}
+                      onDragEnd={() => setDragIdx(null)}
+                      className="h-9 grid place-items-center cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
+                      title="드래그해서 순서 변경"
+                    >
+                      <GripVertical className="h-4 w-4" />
+                    </button>
                     <Input value={line.time} onChange={(e) => updateScript(i, { time: e.target.value })} className="h-9 text-xs" />
                     <Input value={line.caption} onChange={(e) => updateScript(i, { caption: e.target.value })} placeholder="자막" className="h-9 text-xs" />
                     <Input value={line.narration} onChange={(e) => updateScript(i, { narration: e.target.value })} placeholder="나레이션" className="h-9 text-xs" />

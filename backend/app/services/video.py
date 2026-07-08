@@ -149,24 +149,26 @@ def _probe_duration(path: str) -> float:
         return 0.0
 
 
-def extract_video_frames(video_path: str, out_dir: str, n: int = 6) -> list[str]:
-    """영상에서 균등 간격으로 n장 프레임 추출(가로 768px 축소) → jpg 경로 목록.
+def extract_video_frames(video_path: str, out_dir: str, n: int = 6, width: int = 768) -> list[str]:
+    """영상에서 균등 간격으로 n장 프레임 추출 → jpg 경로 목록.
 
-    Gemini 가 영상 '내용'을 보고 글/대본을 쓰게 하기 위한 가벼운 방법.
+    Gemini 분석용은 작게(768), 블로그 사진용은 크게(예: 1280) 쓴다.
+    width<=0 이면 원본 해상도.
     """
     dur = _probe_duration(video_path) or 1.0
-    n = max(1, min(n, 8))
+    n = max(1, min(n, 12))
     step = dur / (n + 1)
+    vf = f"scale={width}:-1" if width and width > 0 else None
     out: list[str] = []
     for i in range(1, n + 1):
         t = step * i
         p = str(Path(out_dir) / f"vframe_{Path(video_path).stem}_{i}.jpg")
+        cmd = ["ffmpeg", "-y", "-ss", f"{t:.2f}", "-i", video_path, "-frames:v", "1"]
+        if vf:
+            cmd += ["-vf", vf]
+        cmd += ["-q:v", "3", p]
         try:
-            subprocess.run(
-                ["ffmpeg", "-y", "-ss", f"{t:.2f}", "-i", video_path,
-                 "-frames:v", "1", "-vf", "scale=768:-1", p],
-                check=True, capture_output=True,
-            )
+            subprocess.run(cmd, check=True, capture_output=True)
             if Path(p).exists():
                 out.append(p)
         except Exception:
