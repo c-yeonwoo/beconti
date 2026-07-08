@@ -42,12 +42,13 @@ export const CATEGORIES = [
   "기타",
 ];
 
-export type ScriptStyle = "polite" | "cute" | "energetic";
+export type ScriptStyle = "polite" | "cute" | "energetic" | "broadcast";
 
 export const SCRIPT_STYLES: { value: ScriptStyle; label: string }[] = [
   { value: "polite", label: "존댓말 (깔끔한 리뷰)" },
   { value: "cute", label: "반말·귀여운 브이로그" },
   { value: "energetic", label: "활기찬 반말 (텐션↑)" },
+  { value: "broadcast", label: "맛집 탐방 리포터 (VJ특공대 톤)" },
 ];
 
 export type CaptionStyle = "basic" | "yellow" | "neon";
