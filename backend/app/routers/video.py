@@ -18,14 +18,14 @@ def make_video(content_id: str) -> GeneratedContent:
     if content is None:
         raise HTTPException(status_code=404, detail="콘텐츠를 찾을 수 없습니다.")
 
-    image_paths = [p for (p, _mime) in get_media_paths(get_content_media_ids(content_id))]
-    if not image_paths:
-        raise HTTPException(status_code=400, detail="영상으로 만들 이미지가 없습니다.")
+    media_paths = [p for (p, _mime) in get_media_paths(get_content_media_ids(content_id))]
+    if not media_paths:
+        raise HTTPException(status_code=400, detail="숏폼으로 만들 미디어(사진/영상)가 없습니다.")
 
     out = settings.render_dir / f"shortform_{content_id}.mp4"
     try:
         _, engine = render_shortform(
-            image_paths, [s.model_dump() for s in content.script], str(out)
+            media_paths, [s.model_dump() for s in content.script], str(out)
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"숏폼 렌더 실패: {e}")

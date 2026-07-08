@@ -17,6 +17,7 @@ from ..config import settings
 W, H, FPS = 1080, 1920, 30
 MIN_TOTAL_SEC = 30.0  # 숏폼 최소 길이 (체험단 규칙: 30초 이상)
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}
+VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
 
 # 이모지/그림문자 제거 (자막 폰트에서 깨짐)
 _EMOJI_RE = re.compile(
@@ -136,11 +137,114 @@ def _render_segment(image: str, caption_png: str, duration: float, out_path: str
     subprocess.run(cmd, check=True, capture_output=True)
 
 
+def _probe_duration(path: str) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=nk=1:nw=1", path],
+        capture_output=True, text=True,
+    ).stdout.strip()
+    try:
+        return float(out)
+    except ValueError:
+        return 0.0
+
+
+def _has_audio(path: str) -> bool:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries",
+         "stream=index", "-of", "csv=p=0", path],
+        capture_output=True, text=True,
+    ).stdout.strip()
+    return bool(out)
+
+
+def _normalize_video(path: str, out_path: str) -> str:
+    """영상 → 9:16 1080x1920, 30fps, h264+aac 로 통일 (오디오 없으면 무음 추가)."""
+    vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,fps={FPS}"
+    if _has_audio(path):
+        cmd = [
+            "ffmpeg", "-y", "-i", path, "-vf", vf,
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-ar", "44100", "-ac", "2",
+            out_path,
+        ]
+    else:
+        cmd = [
+            "ffmpeg", "-y", "-i", path,
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-vf", vf, "-map", "0:v", "-map", "1:a", "-shortest",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+            out_path,
+        ]
+    subprocess.run(cmd, check=True, capture_output=True)
+    return out_path
+
+
+def render_from_videos(video_paths: list[str], script: list[dict], out_path: str) -> str:
+    """실촬영 영상들을 9:16 로 정규화·이어붙이고, 대본 자막을 시간대별로 새겨넣는다."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpd = Path(tmp)
+        norm = [_normalize_video(v, str(tmpd / f"nv_{j}.mp4")) for j, v in enumerate(video_paths)]
+
+        # 이어붙이기 (동일 코덱이라 copy 가능)
+        base = str(tmpd / "base.mp4")
+        if len(norm) == 1:
+            base = norm[0]
+        else:
+            lst = tmpd / "list.txt"
+            lst.write_text("".join(f"file '{s}'\n" for s in norm))
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", base],
+                check=True, capture_output=True,
+            )
+
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+        captions = [_strip_emoji(str(l.get("caption", ""))) for l in (script or [])]
+        captions = [c for c in captions if c]
+
+        if not captions:
+            subprocess.run(["ffmpeg", "-y", "-i", base, "-c", "copy", out_path],
+                           check=True, capture_output=True)
+            return out_path
+
+        # 자막을 총 길이에 걸쳐 균등 배분해 오버레이
+        dur = _probe_duration(base) or MIN_TOTAL_SEC
+        win = dur / len(captions)
+        inputs = ["-i", base]
+        for i, cap in enumerate(captions):
+            png = str(tmpd / f"cap_{i}.png")
+            _make_caption_png(cap, png)
+            inputs += ["-i", png]
+
+        # [0:v][1:v]overlay=...:enable='between(t,s,e)'[v1]; [v1][2:v]overlay...[v2]...
+        chains, cur = [], "0:v"
+        for i in range(len(captions)):
+            s, e = i * win, (i + 1) * win
+            nxt = f"v{i}"
+            chains.append(
+                f"[{cur}][{i + 1}:v]overlay=(W-w)/2:H-h-180:enable='between(t,{s:.2f},{e:.2f})'[{nxt}]"
+            )
+            cur = nxt
+        filt = ";".join(chains)
+        subprocess.run(
+            ["ffmpeg", "-y", *inputs, "-filter_complex", filt,
+             "-map", f"[{cur}]", "-map", "0:a?",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", out_path],
+            check=True, capture_output=True,
+        )
+    return out_path
+
+
 def render_ffmpeg(image_paths: list[str], script: list[dict], out_path: str) -> str:
-    """FFmpeg 로 9:16 숏폼 생성. 대본 줄마다 이미지를 순환 배정."""
+    """FFmpeg 로 9:16 숏폼 생성. 영상이 있으면 영상 편집, 없으면 사진 슬라이드쇼."""
+    videos = [p for p in image_paths if Path(p).suffix.lower() in VIDEO_EXTS]
+    if videos:
+        # 실촬영 영상 우선 (체험단 클립 규칙: 사진 편집 영상 불가)
+        return render_from_videos(videos, script, out_path)
+
     images = [p for p in image_paths if Path(p).suffix.lower() in IMG_EXTS]
     if not images:
-        raise ValueError("이미지가 없어 숏폼을 만들 수 없습니다.")
+        raise ValueError("이미지·영상이 없어 숏폼을 만들 수 없습니다.")
     lines = script or [{"caption": "", "time": ""}]
 
     # 각 컷 길이 계산 후, 전체가 30초 미만이면 30초 이상이 되도록 균등 확대
