@@ -58,55 +58,19 @@ def default_guideline(content_type: str) -> str:
     return DEFAULT_GUIDELINE_VIDEO if content_type == "vlog" else DEFAULT_GUIDELINE_BLOG
 
 
-def _build_prompt(
+def _build_blog_prompt(
     keywords: list[str],
     category: str,
     content_type: str,
     guideline: str,
     hashtags: list[str],
-    has_video: bool,
-    script_style: str = "polite",
-    segment_times: list[tuple[float, float]] | None = None,
 ) -> str:
     kw = ", ".join(keywords) if keywords else "(없음)"
     tags = " ".join(hashtags) if hashtags else "(지정 없음)"
     type_desc = CONTENT_TYPE_LABELS.get(content_type, CONTENT_TYPE_LABELS["place_review"])
-    n_note = (
-        "첨부된 사진들은 업로드된 순서가 뒤죽박죽일 수 있습니다. "
-        "각 사진의 내용을 먼저 파악한 뒤, 리뷰 흐름(도입→상세→마무리)에 가장 잘 맞도록 "
-        "**사진의 노출 순서와 위치를 직접 계획**하세요."
-    )
-    if has_video:
-        style_desc = SCRIPT_STYLES.get(script_style, SCRIPT_STYLES["polite"])
-        script_json = '  "script": [\n    {{"time": "0-3s", "caption": "자막(짧게)", "narration": "나레이션"}}\n  ]'
-        if segment_times:
-            # 영상 이미지 중 뒷부분(장면 프레임)이 실제 화면전환 구간과 1:1 대응.
-            seg_list = "\n".join(
-                f"  {i + 1}. {s:.1f}-{e:.1f}초" for i, (s, e) in enumerate(segment_times)
-            )
-            script_rule = (
-                f"- 첨부 이미지 중 마지막 {len(segment_times)}장은 **영상의 실제 화면전환 구간별 장면**이며,\n"
-                f"  순서대로 아래 시간대에 정확히 대응합니다:\n{seg_list}\n"
-                f"- script 는 **정확히 {len(segment_times)}줄**, 위 순서·구간과 1:1로 작성하고 "
-                "각 줄의 \"time\" 필드는 위에 주어진 시간대를 \"S.S-E.Es\" 형식 그대로 사용하세요 "
-                "(임의로 시간을 만들지 마세요).\n"
-                "- 각 장면 이미지의 실제 내용을 반영해 caption/narration을 작성하세요 "
-                "(배경음+자막 전제). 이모지 금지.\n"
-                f"- **script 의 caption/narration 말투**: {style_desc}"
-            )
-        else:
-            script_rule = (
-                "- 첨부 이미지 중 일부는 **영상에서 추출한 장면**입니다. 영상 내용을 실제로 반영해 작성하세요.\n"
-                "- 첨부된 영상을 편집한 **30초 이상** 숏폼용으로 script 를 8~12줄 작성 "
-                "(배경음+자막 전제). caption/narration 에 이모지 금지.\n"
-                f"- **script 의 caption/narration 말투**: {style_desc}"
-            )
-    else:
-        script_json = '  "script": []'
-        script_rule = "- 영상이 첨부되지 않았으므로 script 는 **반드시 빈 배열 [] 로** 두세요."
-    return f"""당신은 체험단 리뷰에 능한 한국어 콘텐츠 작가입니다.
-{n_note}
-그 계획에 맞춰 블로그 본문을 중심으로 작성하세요.
+    return f"""당신은 체험단 리뷰에 능한 한국어 블로그 작가입니다.
+첨부된 사진들은 업로드 순서가 뒤죽박죽일 수 있습니다. 각 사진 내용을 먼저 파악한 뒤,
+리뷰 흐름(도입→상세→마무리)에 맞게 **사진 순서·위치를 직접 계획**하고, 정성껏 깊이 있게 작성하세요.
 
 - 카테고리: {category or "(미지정)"}
 - 콘텐츠 유형: {type_desc}
@@ -119,23 +83,62 @@ def _build_prompt(
 [사진 배치 규칙]
 - 사진을 넣을 위치에 정확히 `[사진 N]` 표기 (N = 그 사진의 **업로드 순서 번호**, 1부터).
 - 각 사진은 내용상 가장 어울리는 위치에 배치하고, **모든 사진을 한 번씩만** 사용.
-- 예: 3번째 업로드 사진이 음식 클로즈업이면 음식 설명 문단 앞에 `[사진 3]`.
 
 [금지]
-- 본문에 지도 링크·URL·"지도 위치 링크"·주소 텍스트를 넣지 마세요.
-  위치/지도는 발행 시 별도의 장소 카드로 자동 첨부됩니다.
-- **이모지(😀🍽️✨ 등)를 절대 쓰지 마세요.**
+- 본문에 지도 링크·URL·주소 텍스트 금지 (위치는 발행 시 장소 카드로 자동 첨부).
+- 이모지 금지.
 
-아래 JSON 형식으로만 응답하세요. 다른 설명 없이 JSON 만 출력합니다.
-
+아래 JSON 형식으로만 응답하세요. 다른 설명 없이 JSON 만:
 {{
   "title": "클릭을 부르는 자연스러운 한국어 제목",
-  "body": "마크다운 본문. 소제목(##)·문단 구성. 사진 위치마다 [사진 N] 을 독립된 줄에 표기.",
-{script_json}
+  "body": "마크다운 본문. 소제목(##)·문단 구성. 사진 위치마다 [사진 N] 을 독립된 줄에 표기."
 }}
+- 필수 해시태그는 반드시 본문에 포함하세요."""
 
-- 필수 해시태그는 반드시 결과에 포함하세요.
-{script_rule}"""
+
+def _build_script_prompt(
+    keywords: list[str],
+    guideline: str,
+    script_style: str,
+    segment_times: list[tuple[float, float]] | None,
+) -> str:
+    kw = ", ".join(keywords) if keywords else "(없음)"
+    style_desc = SCRIPT_STYLES.get(script_style, SCRIPT_STYLES["polite"])
+    if segment_times:
+        seg_list = "\n".join(
+            f"  {i + 1}. {s:.1f}-{e:.1f}초" for i, (s, e) in enumerate(segment_times)
+        )
+        seg_rule = (
+            f"- 첨부 이미지는 **영상의 실제 장면 구간별 대표 프레임**이며, 순서대로 아래 "
+            f"시간대에 대응합니다:\n{seg_list}\n"
+            f"- script 는 **정확히 {len(segment_times)}줄**, 위 순서·구간과 1:1로 작성하고 "
+            "각 줄의 \"time\" 은 주어진 시간대를 \"S.S-E.Es\" 형식 그대로 쓰세요(임의 시간 금지).\n"
+            "- 각 장면의 실제 내용을 반영하세요."
+        )
+    else:
+        seg_rule = (
+            "- 첨부 이미지는 영상에서 뽑은 장면입니다. 영상 내용을 반영해 30초 이상 숏폼용으로 "
+            "script 8~12줄 작성. time 은 \"0-4s\" 형식."
+        )
+    return f"""당신은 숏폼 영상 대본 작가입니다. 아래 규칙으로 자막·나레이션 대본만 작성하세요.
+
+- 핵심 키워드: {kw}
+
+[대본 가이드라인]
+{guideline}
+
+[작성 규칙]
+{seg_rule}
+- caption 은 화면 하단 짧은 자막, narration 은 음성으로 읽을 문장.
+- 말투: {style_desc}
+- 이모지 금지.
+
+아래 JSON 형식으로만 응답하세요. 다른 설명 없이 JSON 만:
+{{
+  "script": [
+    {{"time": "0-4s", "caption": "짧은 자막", "narration": "나레이션 문장"}}
+  ]
+}}"""
 
 
 def _parse_json(text: str) -> dict:
@@ -152,44 +155,50 @@ def _parse_json(text: str) -> dict:
         raise
 
 
-def _stub(keywords: list[str], content_type: str, hashtags: list[str], n_images: int, has_video: bool) -> dict:
-    kw = ", ".join(keywords) if keywords else "샘플 키워드"
-    tags = " ".join(hashtags) if hashtags else "#샘플태그"
-    body = (
-        f"# {kw} 후기\n\n"
-        "> ⚠️ GEMINI_API_KEY 가 설정되지 않아 **스텁(더미) 초안**이 반환되었습니다.\n"
-        "> backend/.env 에 키를 넣으면 실제 AI 분석 결과로 대체됩니다.\n\n"
-        f"## 첫인상\n\n업로드한 사진 {n_images}장 · 유형 '{content_type}' 로 작성될 자리입니다.\n\n"
-        "## 상세\n\n[사진 1] 이 위치에 사진별 설명이 들어갑니다.\n\n"
-        f"## 마무리\n\n방문을 고민 중이라면 참고가 되었길 바랍니다.\n\n{tags}"
-    )
-    script = (
-        [
-            {"time": "0-5s", "caption": f"{kw} 다녀왔어요", "narration": f"오늘은 {kw}에 다녀왔습니다."},
-            {"time": "5-15s", "caption": "하이라이트", "narration": "가장 인상 깊었던 부분입니다."},
-            {"time": "15-30s", "caption": "총평", "narration": "다시 방문할 의향 100%입니다."},
-        ]
-        if has_video
-        else []
-    )
-    return {"title": f"{kw} 방문 후기", "body": body, "script": script}
+def _image_part(types, path: str):
+    data = Path(path).read_bytes()
+    suffix = Path(path).suffix.lower().lstrip(".")
+    mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
+    return types.Part.from_bytes(data=data, mime_type=mime)
 
 
-def generate_draft(
+def _gemini_json(image_paths: list[str], prompt: str) -> dict:
+    """이미지들 + 프롬프트로 Gemini 호출 → JSON dict. (503 지수백오프 재시도)"""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    parts: list[object] = [_image_part(types, p) for p in image_paths]
+    parts.append(prompt)
+    config = types.GenerateContentConfig(response_mime_type="application/json", temperature=0.9)
+
+    resp, last_err = None, None
+    for attempt in range(5):
+        try:
+            resp = client.models.generate_content(
+                model=settings.gemini_model, contents=parts, config=config
+            )
+            break
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+    if resp is None:
+        raise RuntimeError(f"Gemini 호출 실패(과부하 지속): {last_err}")
+    return _parse_json(resp.text or "")
+
+
+def generate_blog(
     image_paths: list[str],
     keywords: list[str],
     category: str = "",
     content_type: str = "place_review",
     guideline: str = "",
     hashtags: list[str] | None = None,
-    has_video: bool = False,
-    script_style: str = "polite",
 ) -> dict:
-    """이미지 경로 + 생성 옵션 → {title, body, script[]} dict 반환.
-
-    guideline 이 비어 있으면 유형별 기본 가이드라인을 사용한다.
-    숏폼 대본(script)은 has_video=True(영상 첨부)일 때만 생성된다.
-    """
+    """블로그 글 생성 → {title, body}. 영상은 프레임 몇 장을 맥락으로 함께 전달."""
     import tempfile
 
     hashtags = hashtags or []
@@ -199,74 +208,68 @@ def generate_draft(
     videos = [p for p in image_paths if Path(p).suffix.lower() in _VIDEO_EXTS]
 
     if not settings.gemini_api_key:
-        return _stub(keywords, content_type, hashtags, len(images), has_video)
-
-    # 지연 import: 키 없는 환경에서 SDK 미설치여도 스텁 경로는 동작
-    from google import genai
-    from google.genai import types
-
-    client = genai.Client(api_key=settings.gemini_api_key)
+        kw = ", ".join(keywords) if keywords else "샘플 키워드"
+        return {
+            "title": f"{kw} 방문 후기",
+            "body": (
+                f"# {kw} 후기\n\n> GEMINI_API_KEY 미설정 — 스텁 초안입니다.\n\n"
+                "## 첫인상\n[사진 1]\n\n## 마무리\n" + (" ".join(hashtags) if hashtags else "")
+            ),
+        }
 
     with tempfile.TemporaryDirectory() as td:
-        # 영상은 실제 화면전환 구간을 감지해, 구간별 대표 프레임을 이미지로 전달
-        # → Gemini 가 대본을 영상 내용 + 실제 장면 길이에 맞춰 작성(균등 n분할 방지).
+        from .video import extract_video_frames
+
+        frames: list[str] = []
+        for v in videos:
+            try:
+                frames += extract_video_frames(v, td, n=6)
+            except Exception:  # noqa: BLE001
+                pass
+        prompt = _build_blog_prompt(keywords, category, content_type, guideline, hashtags)
+        data = _gemini_json(images + frames, prompt)
+
+    return {"title": data.get("title") or (", ".join(keywords) or "제목 없음"),
+            "body": data.get("body") or ""}
+
+
+def generate_script(
+    video_paths: list[str],
+    keywords: list[str],
+    guideline: str = "",
+    script_style: str = "polite",
+) -> dict:
+    """숏폼 대본 생성 → {script:[...]}. 영상 없으면 빈 배열."""
+    import tempfile
+
+    videos = [p for p in video_paths if Path(p).suffix.lower() in _VIDEO_EXTS]
+    if not videos:
+        return {"script": []}
+    guideline = guideline.strip() or DEFAULT_GUIDELINE_VIDEO
+
+    if not settings.gemini_api_key:
+        kw = ", ".join(keywords) if keywords else "샘플"
+        return {"script": [
+            {"time": "0-5s", "caption": f"{kw} 다녀왔어요", "narration": f"오늘은 {kw}입니다."},
+            {"time": "5-10s", "caption": "하이라이트", "narration": "가장 인상 깊었던 부분입니다."},
+        ]}
+
+    with tempfile.TemporaryDirectory() as td:
+        from .video import compute_script_segments, extract_frame_at
+
         frame_paths: list[str] = []
         segment_times: list[tuple[float, float]] = []
-        if videos:
-            from .video import compute_script_segments, extract_frame_at
+        try:
+            for i, seg in enumerate(compute_script_segments(videos)):
+                mid = (seg["local_start"] + seg["local_end"]) / 2
+                p = str(Path(td) / f"seg_{i}.jpg")
+                if extract_frame_at(seg["video"], mid, p):
+                    frame_paths.append(p)
+                    segment_times.append((seg["start"], seg["end"]))
+        except Exception as e:  # noqa: BLE001
+            print(f"  ⚠️ 장면 구간 분석 실패: {str(e)[:60]}")
+            segment_times = []
+        prompt = _build_script_prompt(keywords, guideline, script_style, segment_times or None)
+        data = _gemini_json(frame_paths, prompt)
 
-            try:
-                segments = compute_script_segments(videos)
-                for i, seg in enumerate(segments):
-                    mid = (seg["local_start"] + seg["local_end"]) / 2
-                    p = str(Path(td) / f"seg_{i}.jpg")
-                    if extract_frame_at(seg["video"], mid, p):
-                        frame_paths.append(p)
-                        segment_times.append((seg["start"], seg["end"]))
-            except Exception as e:  # noqa: BLE001
-                print(f"  ⚠️ 장면 구간 분석 실패: {str(e)[:60]}")
-                segment_times = []
-
-        parts: list[object] = []
-        for path in images + frame_paths:
-            data = Path(path).read_bytes()
-            suffix = Path(path).suffix.lower().lstrip(".")
-            mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
-            parts.append(types.Part.from_bytes(data=data, mime_type=mime))
-        parts.append(
-            _build_prompt(
-                keywords, category, content_type, guideline, hashtags, has_video,
-                script_style, segment_times or None,
-            )
-        )
-
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.9,
-        )
-
-        # 2.5 모델은 과부하 시 503 UNAVAILABLE 을 자주 반환 → 지수 백오프 재시도
-        resp = None
-        last_err: Exception | None = None
-        for attempt in range(5):
-            try:
-                resp = client.models.generate_content(
-                    model=settings.gemini_model, contents=parts, config=config
-                )
-                break
-            except Exception as e:  # noqa: BLE001
-                last_err = e
-                if "503" in str(e) or "UNAVAILABLE" in str(e):
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                raise
-        if resp is None:
-            raise RuntimeError(f"Gemini 호출 실패(과부하 지속): {last_err}")
-
-    data = _parse_json(resp.text or "")
-    data.setdefault("title", ", ".join(keywords) or "제목 없음")
-    data.setdefault("body", "")
-    data.setdefault("script", [])
-    if not has_video:
-        data["script"] = []  # 영상 없으면 대본 미생성
-    return data
+    return {"script": data.get("script") or []}

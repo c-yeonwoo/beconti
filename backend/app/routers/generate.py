@@ -5,8 +5,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from ..db import get_media_paths, save_content
-from ..models import GeneratePayload, GeneratedContent, ScriptLine, default_platform_status
-from ..services.gemini import generate_draft
+from ..models import GeneratePayload, GeneratedContent, default_platform_status
+from ..services.gemini import generate_blog
 
 router = APIRouter(prefix="/api", tags=["generate"])
 
@@ -21,56 +21,48 @@ def media_has_video(paths: list[tuple[str, str]]) -> bool:
     )
 
 
-@router.post("/generate", response_model=GeneratedContent)
-def generate(payload: GeneratePayload) -> GeneratedContent:
-    paths = get_media_paths(payload.mediaIds)
-    if not paths and payload.mediaIds:
-        raise HTTPException(status_code=404, detail="mediaIds 에 해당하는 업로드 파일을 찾을 수 없습니다.")
-
-    image_paths = [p for (p, _mime) in paths]
-    draft = generate_draft(
-        image_paths,
-        keywords=payload.keywords,
-        category=payload.category,
-        content_type=payload.contentType,
-        guideline=payload.guideline,
-        hashtags=payload.requiredHashtags,
-        has_video=media_has_video(paths),
-        script_style=payload.scriptStyle,
-    )
-
-    script = [
-        ScriptLine(
-            time=str(line.get("time", "")),
-            caption=str(line.get("caption", "")),
-            narration=str(line.get("narration", "")),
-        )
-        for line in draft.get("script", [])
-        if isinstance(line, dict)
-    ]
-
-    content = GeneratedContent(
-        id=uuid.uuid4().hex,
-        title=draft.get("title", ""),
-        body=draft.get("body", ""),
-        videoUrl=None,
-        script=script,
-        createdAt=datetime.now(timezone.utc).isoformat(),
-        platformStatus=default_platform_status(),
-    )
-    save_content(content, payload.mediaIds, payload.placeName, _gen_params(payload))
-    return content
-
-
-def _gen_params(payload: GeneratePayload) -> dict:
+def gen_params(payload: GeneratePayload) -> dict:
+    """생성 설정을 DB 저장용 dict 로. guideline(구) → blogGuideline 하위호환 매핑."""
+    blog_g = payload.blogGuideline or payload.guideline
     return {
         "keywords": payload.keywords,
         "category": payload.category,
         "contentType": payload.contentType,
-        "guideline": payload.guideline,
+        "blogGuideline": blog_g,
+        "shortsGuideline": payload.shortsGuideline,
         "requiredHashtags": payload.requiredHashtags,
         "placeName": payload.placeName,
         "placeUrl": payload.placeUrl,
         "scriptStyle": payload.scriptStyle,
         "captionStyle": payload.captionStyle,
     }
+
+
+@router.post("/generate", response_model=GeneratedContent)
+def generate(payload: GeneratePayload) -> GeneratedContent:
+    """블로그 글을 생성한다(메인). 숏폼 대본은 상세 페이지에서 별도로 생성."""
+    paths = get_media_paths(payload.mediaIds)
+    if not paths and payload.mediaIds:
+        raise HTTPException(status_code=404, detail="mediaIds 에 해당하는 업로드 파일을 찾을 수 없습니다.")
+
+    image_paths = [p for (p, _mime) in paths]
+    draft = generate_blog(
+        image_paths,
+        keywords=payload.keywords,
+        category=payload.category,
+        content_type=payload.contentType,
+        guideline=payload.blogGuideline or payload.guideline,
+        hashtags=payload.requiredHashtags,
+    )
+
+    content = GeneratedContent(
+        id=uuid.uuid4().hex,
+        title=draft.get("title", ""),
+        body=draft.get("body", ""),
+        videoUrl=None,
+        script=[],  # 숏폼은 옵셔널 — 상세에서 생성
+        createdAt=datetime.now(timezone.utc).isoformat(),
+        platformStatus=default_platform_status(),
+    )
+    save_content(content, payload.mediaIds, payload.placeName, gen_params(payload))
+    return content

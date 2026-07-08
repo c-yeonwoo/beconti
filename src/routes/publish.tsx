@@ -11,11 +11,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Loader2, RefreshCw, Send } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Loader2, RefreshCw, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   listContent,
   publishContent,
+  deleteContent,
   type GeneratedContent,
   type Platform,
   type PublishStatus,
@@ -60,6 +72,15 @@ function PublishPage() {
     },
     onError: (e: Error) =>
       toast.error("발행 요청 실패", { description: e.message }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (contentId: string) => deleteContent(contentId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["content"] });
+      toast.success("콘텐츠를 삭제했습니다");
+    },
+    onError: (e: Error) => toast.error("삭제 실패", { description: e.message }),
   });
 
   return (
@@ -145,52 +166,77 @@ function PublishPage() {
                             <TableCell key={p.key}>
                               <div className="flex items-center gap-1.5">
                                 <StatusBadge status={status} />
-                                {status !== "success" && (
-                                  <button
-                                    type="button"
-                                    disabled={publishMut.isPending}
-                                    onClick={() =>
-                                      publishMut.mutate({ contentId: row.id, platforms: [p.key] })
-                                    }
-                                    title={`${p.label} ${status === "idle" ? "발행" : "재발행"}`}
-                                    className="h-6 w-6 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40"
-                                  >
-                                    {pending ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      <RefreshCw className="h-3 w-3" />
-                                    )}
-                                  </button>
-                                )}
+                                <button
+                                  type="button"
+                                  disabled={publishMut.isPending}
+                                  onClick={() =>
+                                    publishMut.mutate({ contentId: row.id, platforms: [p.key] })
+                                  }
+                                  title={`${p.label} ${status === "idle" ? "발행" : "재발행"}`}
+                                  className="h-6 w-6 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40"
+                                >
+                                  {pending ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="h-3 w-3" />
+                                  )}
+                                </button>
                               </div>
                             </TableCell>
                           );
                         })}
                         <TableCell className="text-right">
-                          {allIdle ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={publishMut.isPending}
-                              onClick={() =>
-                                publishMut.mutate({
-                                  contentId: row.id,
-                                  platforms: platforms.map((p) => p.key),
-                                })
-                              }
-                            >
-                              {isPendingFor(platforms.map((p) => p.key)) ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Send className="h-3 w-3" />
-                              )}{" "}
-                              최초 발행(전체)
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              플랫폼별 버튼으로 재발행
-                            </span>
-                          )}
+                          <div className="flex items-center justify-end gap-1">
+                            {allIdle && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={publishMut.isPending}
+                                onClick={() =>
+                                  publishMut.mutate({
+                                    contentId: row.id,
+                                    platforms: platforms.map((p) => p.key),
+                                  })
+                                }
+                              >
+                                {isPendingFor(platforms.map((p) => p.key)) ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Send className="h-3 w-3" />
+                                )}{" "}
+                                최초 발행(전체)
+                              </Button>
+                            )}
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <button
+                                  type="button"
+                                  title="콘텐츠 삭제"
+                                  className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>이 콘텐츠를 삭제할까요?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    "{row.title || "(제목 없음)"}" 및 생성된 숏폼 영상이 삭제됩니다.
+                                    이 작업은 되돌릴 수 없습니다. (이미 발행된 글은 지워지지 않아요.)
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>취소</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => deleteMut.mutate(row.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    삭제
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

@@ -26,7 +26,9 @@ class GeneratePayload(BaseModel):
     keywords: list[str] = []
     category: str = ""                    # 카테고리 (예: 맛집, 뷰티, 여행)
     contentType: str = "place_review"     # 유형: place_review | product_review | vlog
-    guideline: str = ""                   # 붙여넣은 가이드라인. 비면 유형별 기본값 사용
+    guideline: str = ""                   # (deprecated) 하위호환 — blogGuideline 로 매핑
+    blogGuideline: str = ""               # 블로그 글 전용 가이드라인. 비면 기본값
+    shortsGuideline: str = ""             # 숏폼 대본 전용 가이드라인. 비면 기본값
     scriptStyle: str = "polite"           # 숏폼 대본 말투: polite | cute | energetic | broadcast
     captionStyle: str = "basic"           # 숏폼 자막 스타일: basic | yellow | neon
     requiredHashtags: list[str] = []      # 필수 해시태그

@@ -1,16 +1,29 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Sparkles,
   CheckCircle2,
   XCircle,
   Clock,
   ArrowRight,
+  Trash2,
 } from "lucide-react";
-import { listContent, type GeneratedContent, type Platform } from "@/lib/api";
+import { toast } from "sonner";
+import { listContent, deleteContent, type GeneratedContent, type Platform } from "@/lib/api";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -25,10 +38,19 @@ export const Route = createFileRoute("/")({
 const PLATFORMS: Platform[] = ["naver_blog", "naver_clip", "instagram"];
 
 function Dashboard() {
+  const qc = useQueryClient();
   const { data: content = [], isError } = useQuery({
     queryKey: ["content"],
     queryFn: listContent,
     refetchInterval: 10000,
+  });
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteContent(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["content"] });
+      toast.success("삭제했습니다");
+    },
+    onError: (e: Error) => toast.error("삭제 실패", { description: e.message }),
   });
 
   let success = 0,
@@ -113,33 +135,61 @@ function Dashboard() {
           ) : (
             <ul className="divide-y">
               {recent.map((c: GeneratedContent) => (
-                <li key={c.id}>
+                <li key={c.id} className="py-3 flex items-center gap-3 group">
                   <Link
                     to="/content/$id"
                     params={{ id: c.id }}
-                    className="py-3 flex items-center justify-between gap-4 hover:bg-muted/40 rounded-md px-2 -mx-2"
+                    className="flex-1 flex items-center justify-between gap-4 min-w-0 hover:bg-muted/40 rounded-md px-2 -mx-2 py-1"
                   >
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{c.title || "(제목 없음)"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(c.createdAt).toLocaleString("ko-KR")}
-                    </p>
-                  </div>
-                  <div className="flex gap-1">
-                    {PLATFORMS.map((p) => {
-                      const s = c.platformStatus[p];
-                      const color =
-                        s === "success"
-                          ? "bg-emerald-500"
-                          : s === "failed"
-                            ? "bg-destructive"
-                            : s === "queued"
-                              ? "bg-amber-500"
-                              : "bg-muted";
-                      return <span key={p} className={`h-2 w-2 rounded-full ${color}`} title={`${p}: ${s}`} />;
-                    })}
-                  </div>
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{c.title || "(제목 없음)"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(c.createdAt).toLocaleString("ko-KR")}
+                      </p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      {PLATFORMS.map((p) => {
+                        const s = c.platformStatus[p];
+                        const color =
+                          s === "success"
+                            ? "bg-emerald-500"
+                            : s === "failed"
+                              ? "bg-destructive"
+                              : s === "queued"
+                                ? "bg-amber-500"
+                                : "bg-muted";
+                        return <span key={p} className={`h-2 w-2 rounded-full ${color}`} title={`${p}: ${s}`} />;
+                      })}
+                    </div>
                   </Link>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <button
+                        type="button"
+                        title="삭제"
+                        className="h-8 w-8 grid place-items-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>이 콘텐츠를 삭제할까요?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          "{c.title || "(제목 없음)"}" 및 생성된 숏폼 영상이 삭제됩니다. 되돌릴 수 없습니다.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>취소</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => deleteMut.mutate(c.id)}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          삭제
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </li>
               ))}
             </ul>

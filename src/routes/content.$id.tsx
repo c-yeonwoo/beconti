@@ -2,7 +2,18 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, Save, Sparkles, X, Upload, Clapperboard, GripVertical } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Save,
+  Sparkles,
+  X,
+  Upload,
+  Clapperboard,
+  GripVertical,
+  Film,
+  Wand2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,10 +28,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
   getContentById,
   getContentSettings,
   updateContent,
-  regenerateContent,
+  regenerateBlog,
+  regenerateScript,
   makeVideo,
   uploadMedia,
   getDefaults,
@@ -31,6 +50,7 @@ import {
   type ScriptStyle,
   type CaptionStyle,
   type ScriptLine,
+  type GeneratePayload,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/content/$id")({
@@ -51,29 +71,30 @@ function ContentDetailPage() {
   const settingsQ = useQuery({ queryKey: ["settings", id], queryFn: () => getContentSettings(id) });
   const defaultsQ = useQuery({ queryKey: ["defaults"], queryFn: getDefaults, staleTime: Infinity });
 
-  // 결과(수동 편집)
+  // 블로그 (수동 편집)
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  // 숏폼 대본
   const [script, setScript] = useState<ScriptLine[]>([]);
-  // 생성 설정
+  // 설정
   const [keywords, setKeywords] = useState<string[]>([]);
   const [kwInput, setKwInput] = useState("");
   const [category, setCategory] = useState("");
   const [contentType, setContentType] = useState<ContentType>("place_review");
+  const [blogGuideline, setBlogGuideline] = useState("");
+  const [shortsGuideline, setShortsGuideline] = useState("");
   const [scriptStyle, setScriptStyle] = useState<ScriptStyle>("polite");
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("basic");
-  const [guideline, setGuideline] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [placeName, setPlaceName] = useState("");
   const [placeUrl, setPlaceUrl] = useState("");
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [videoVersion, setVideoVersion] = useState(0); // 재생성 시 캐시 무효화용
+  const [videoVersion, setVideoVersion] = useState(0);
+  const [shortsOpen, setShortsOpen] = useState(false);
 
-  const guidelinePlaceholder =
-    (contentType === "vlog" ? defaultsQ.data?.video : defaultsQ.data?.blog) ??
-    "비우면 유형별 기본 규칙이 적용됩니다.";
+  const hasVideo = media.some((m) => /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(m.url));
 
   useEffect(() => {
     const c = contentQ.data;
@@ -90,15 +111,30 @@ function ContentDetailPage() {
       setKeywords(s.keywords);
       setCategory(s.category);
       setContentType(s.contentType);
+      setBlogGuideline(s.blogGuideline);
+      setShortsGuideline(s.shortsGuideline);
       setScriptStyle(s.scriptStyle);
       setCaptionStyle(s.captionStyle);
-      setGuideline(s.guideline);
       setHashtags(s.requiredHashtags);
       setPlaceName(s.placeName);
       setPlaceUrl(s.placeUrl);
       setMedia(s.media);
     }
   }, [settingsQ.data]);
+
+  const payload = (): GeneratePayload => ({
+    keywords,
+    category,
+    contentType,
+    blogGuideline,
+    shortsGuideline,
+    scriptStyle,
+    captionStyle,
+    requiredHashtags: hashtags,
+    placeName,
+    placeUrl,
+    mediaIds: media.map((m) => m.mediaId),
+  });
 
   const saveMut = useMutation({
     mutationFn: () => updateContent(id, { title, body, script }),
@@ -110,33 +146,31 @@ function ContentDetailPage() {
     onError: (e: Error) => toast.error("저장 실패", { description: e.message }),
   });
 
-  const regenMut = useMutation({
-    mutationFn: () =>
-      regenerateContent(id, {
-        keywords,
-        category,
-        contentType,
-        guideline,
-        scriptStyle,
-        captionStyle,
-        requiredHashtags: hashtags,
-        placeName,
-        placeUrl,
-        mediaIds: media.map((m) => m.mediaId),
-      }),
+  const regenBlogMut = useMutation({
+    mutationFn: () => regenerateBlog(id, payload()),
     onSuccess: (u) => {
       setTitle(u.title);
       setBody(u.body);
+      qc.setQueryData(["content", id], u);
+      qc.invalidateQueries({ queryKey: ["content"] });
+      qc.invalidateQueries({ queryKey: ["settings", id] });
+      toast.success("블로그 글 재생성 완료");
+    },
+    onError: (e: Error) =>
+      toast.error("블로그 재생성 실패", { description: e.message }),
+  });
+
+  const regenScriptMut = useMutation({
+    mutationFn: () => regenerateScript(id, payload()),
+    onSuccess: (u) => {
       setScript(u.script);
       qc.setQueryData(["content", id], u);
       qc.invalidateQueries({ queryKey: ["content"] });
       qc.invalidateQueries({ queryKey: ["settings", id] });
-      toast.success("AI 재생성 완료");
+      toast.success("숏폼 대본 생성 완료");
     },
     onError: (e: Error) =>
-      toast.error("재생성 실패", {
-        description: e.message + " · localhost:8000 백엔드 확인",
-      }),
+      toast.error("대본 생성 실패", { description: e.message }),
   });
 
   const videoMut = useMutation({
@@ -144,11 +178,10 @@ function ContentDetailPage() {
     onSuccess: (u) => {
       qc.setQueryData(["content", id], u);
       qc.invalidateQueries({ queryKey: ["content"] });
-      setVideoVersion((v) => v + 1); // 같은 파일명이라 캐시 무효화
-      toast.success("숏폼 영상 생성 완료", { description: "아래 미리보기에서 확인하세요." });
+      setVideoVersion((v) => v + 1);
+      toast.success("숏폼 영상 생성 완료", { description: "미리보기에서 확인하세요." });
     },
-    onError: (e: Error) =>
-      toast.error("숏폼 생성 실패", { description: e.message }),
+    onError: (e: Error) => toast.error("숏폼 생성 실패", { description: e.message }),
   });
 
   const addFiles = async (files: FileList | null) => {
@@ -160,8 +193,8 @@ function ContentDetailPage() {
         ...prev,
         ...mediaIds.map((mid, i) => ({ mediaId: mid, url: URL.createObjectURL(arr[i]) })),
       ]);
-    } catch (e) {
-      toast.error("사진 업로드 실패");
+    } catch {
+      toast.error("사진/영상 업로드 실패");
     }
   };
 
@@ -189,30 +222,31 @@ function ContentDetailPage() {
     return <div className="p-6 text-sm text-destructive">콘텐츠를 불러오지 못했습니다.</div>;
   }
 
+  const videoUrl = contentQ.data.videoUrl;
+
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <Button variant="ghost" size="icon" asChild>
             <Link to="/publish">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">콘텐츠 상세</h1>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight">블로그 글 작성</h1>
             <p className="text-sm text-muted-foreground">
-              수정 후 <b>저장</b> → <b>숏폼 영상 생성</b>으로 영상 반영. 설정 바꿔 처음부터는 <b>AI 재생성</b>. (발행은 배포 관리)
+              메인은 블로그 글입니다. 숏폼이 필요하면 우측 "숏폼 만들기"로.
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => regenMut.mutate()} disabled={regenMut.isPending || media.length === 0}>
-            {regenMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}{" "}
-            AI 재생성
-          </Button>
-          <Button variant="outline" onClick={() => videoMut.mutate()} disabled={videoMut.isPending}>
-            {videoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clapperboard className="h-4 w-4" />}{" "}
-            숏폼 영상 생성
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" onClick={() => setShortsOpen(true)}>
+            <Film className="h-4 w-4" /> 숏폼 만들기
+            {script.length > 0 && (
+              <Badge variant="secondary" className="ml-1">{script.length}</Badge>
+            )}
           </Button>
           <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
             {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}{" "}
@@ -222,18 +256,22 @@ function ContentDetailPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* 생성 설정 */}
+        {/* 좌: 글 설정 */}
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle className="text-base">생성 설정 (AI 재생성)</CardTitle>
+            <CardTitle className="text-base">글 설정</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>사진 ({media.length})</Label>
+              <Label>사진/영상 ({media.length})</Label>
               <div className="grid grid-cols-3 gap-2">
                 {media.map((m) => (
                   <div key={m.mediaId} className="relative group aspect-square rounded-md overflow-hidden border bg-muted">
-                    <img src={m.url} alt="" className="h-full w-full object-cover" />
+                    {/\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(m.url) ? (
+                      <video src={m.url} className="h-full w-full object-cover" />
+                    ) : (
+                      <img src={m.url} alt="" className="h-full w-full object-cover" />
+                    )}
                     <button
                       onClick={() => setMedia((prev) => prev.filter((x) => x.mediaId !== m.mediaId))}
                       className="absolute top-0.5 right-0.5 h-5 w-5 rounded-full bg-background/90 grid place-items-center opacity-0 group-hover:opacity-100"
@@ -256,9 +294,7 @@ function ContentDetailPage() {
               <Select value={category} onValueChange={setCategory}>
                 <SelectTrigger><SelectValue placeholder="카테고리 선택" /></SelectTrigger>
                 <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
+                  {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -270,34 +306,9 @@ function ContentDetailPage() {
                 <SelectContent>
                   <SelectItem value="place_review">장소 리뷰</SelectItem>
                   <SelectItem value="product_review">제품 리뷰</SelectItem>
-                  <SelectItem value="vlog">브이로그 (영상 중심)</SelectItem>
+                  <SelectItem value="vlog">브이로그</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>숏폼 대본 말투</Label>
-              <Select value={scriptStyle} onValueChange={(v) => setScriptStyle(v as ScriptStyle)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {SCRIPT_STYLES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>숏폼 자막 스타일</Label>
-              <Select value={captionStyle} onValueChange={(v) => setCaptionStyle(v as CaptionStyle)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CAPTION_STYLES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">변경 후 "숏폼 영상 생성"을 다시 눌러 반영.</p>
             </div>
 
             <ChipField label="필수 해시태그" items={hashtags} setItems={setHashtags} value={tagInput} setValue={setTagInput} placeholder="예: 성수동카페" hash />
@@ -306,89 +317,38 @@ function ContentDetailPage() {
               <Label>매장명 (지도, 선택)</Label>
               <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="예: 스타벅스 강남대로점" />
             </div>
-
             <div className="space-y-2">
               <Label>네이버 지도 링크 (선택)</Label>
-              <Input value={placeUrl} onChange={(e) => setPlaceUrl(e.target.value)} placeholder="링크 있으면 우선 사용, 없으면 매장명 검색" />
+              <Input value={placeUrl} onChange={(e) => setPlaceUrl(e.target.value)} placeholder="링크 있으면 우선, 없으면 매장명 검색" />
             </div>
 
             <div className="space-y-2">
-              <Label>캠페인 가이드라인</Label>
-              <Textarea value={guideline} onChange={(e) => setGuideline(e.target.value)} className="min-h-[110px] text-sm" placeholder={guidelinePlaceholder} />
+              <Label>블로그 가이드라인</Label>
+              <Textarea
+                value={blogGuideline}
+                onChange={(e) => setBlogGuideline(e.target.value)}
+                className="min-h-[100px] text-sm"
+                placeholder={defaultsQ.data?.blog ?? "비우면 기본 규칙 적용"}
+              />
             </div>
-            <p className="text-xs text-muted-foreground">
-              설정을 바꾸고 상단 <b>AI 재생성</b>을 누르면 제목·본문·대본이 새로 만들어집니다.
-            </p>
+
+            <Button
+              className="w-full"
+              variant="outline"
+              disabled={regenBlogMut.isPending || media.length === 0}
+              onClick={() => regenBlogMut.mutate()}
+            >
+              {regenBlogMut.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> 재생성 중...</>
+              ) : (
+                <><Wand2 className="h-4 w-4" /> 블로그 글 재생성</>
+              )}
+            </Button>
           </CardContent>
         </Card>
 
-        {/* 결과 (수동 편집) */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* 숏폼: 영상 미리보기 + 대본 */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">숏폼 미리보기</CardTitle></CardHeader>
-            <CardContent>
-              {contentQ.data.videoUrl ? (
-                <video
-                  key={videoVersion}
-                  src={`${contentQ.data.videoUrl}?v=${videoVersion}`}
-                  controls
-                  playsInline
-                  className="mx-auto aspect-[9/16] max-h-[520px] rounded-md border bg-black"
-                />
-              ) : (
-                <div className="text-center text-sm text-muted-foreground py-16 border rounded-md">
-                  아직 숏폼 영상이 없습니다. 상단 <b>숏폼 영상 생성</b>을 눌러 만드세요.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {script.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">숏폼 대본</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  왼쪽 손잡이를 잡고 드래그해 자막 순서를 바꿀 수 있어요. 수정 후 저장 → 숏폼 영상 생성.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                <div className="grid grid-cols-[24px_70px_1fr_1fr] gap-2 px-1 text-[11px] text-muted-foreground">
-                  <span /> <span>시간</span> <span>자막</span> <span>나레이션</span>
-                </div>
-                {script.map((line, i) => (
-                  <div
-                    key={i}
-                    className={`grid grid-cols-[24px_70px_1fr_1fr] gap-2 items-center rounded-md ${
-                      dragIdx === i ? "opacity-40" : ""
-                    }`}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (dragIdx !== null) moveScript(dragIdx, i);
-                      setDragIdx(null);
-                    }}
-                  >
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={() => setDragIdx(i)}
-                      onDragEnd={() => setDragIdx(null)}
-                      className="h-9 grid place-items-center cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
-                      title="드래그해서 순서 변경"
-                    >
-                      <GripVertical className="h-4 w-4" />
-                    </button>
-                    <Input value={line.time} onChange={(e) => updateScript(i, { time: e.target.value })} className="h-9 text-xs" />
-                    <Input value={line.caption} onChange={(e) => updateScript(i, { caption: e.target.value })} placeholder="자막" className="h-9 text-xs" />
-                    <Input value={line.narration} onChange={(e) => updateScript(i, { narration: e.target.value })} placeholder="나레이션" className="h-9 text-xs" />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* 블로그 글 수정 폼 */}
+        {/* 우: 블로그 글 */}
+        <div className="lg:col-span-2">
           <Card>
             <CardHeader><CardTitle className="text-base">블로그 글</CardTitle></CardHeader>
             <CardContent className="space-y-3">
@@ -398,12 +358,134 @@ function ContentDetailPage() {
               </div>
               <div className="space-y-2">
                 <Label>본문 (마크다운)</Label>
-                <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[420px] font-mono text-sm" />
+                <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[560px] font-mono text-sm" />
               </div>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* 숏폼 관리 Sheet */}
+      <Sheet open={shortsOpen} onOpenChange={setShortsOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Film className="h-4 w-4" /> 숏폼 만들기 (선택)
+            </SheetTitle>
+            <SheetDescription>
+              영상을 올린 콘텐츠만 숏폼을 만들 수 있어요. 대본 생성 → 영상 생성 순서입니다.
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-4 space-y-5">
+            {!hasVideo && (
+              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground text-center">
+                숏폼을 만들려면 좌측 "글 설정"에서 <b>영상</b>을 업로드하고 저장하세요.
+              </div>
+            )}
+
+            {/* 대본 스타일 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>대본 말투</Label>
+                <Select value={scriptStyle} onValueChange={(v) => setScriptStyle(v as ScriptStyle)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {SCRIPT_STYLES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>자막 스타일</Label>
+                <Select value={captionStyle} onValueChange={(v) => setCaptionStyle(v as CaptionStyle)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CAPTION_STYLES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>숏폼 대본 가이드라인</Label>
+              <Textarea
+                value={shortsGuideline}
+                onChange={(e) => setShortsGuideline(e.target.value)}
+                className="min-h-[80px] text-sm"
+                placeholder={defaultsQ.data?.video ?? "비우면 기본 규칙 적용"}
+              />
+            </div>
+
+            <Button
+              className="w-full"
+              disabled={regenScriptMut.isPending || !hasVideo}
+              onClick={() => regenScriptMut.mutate()}
+            >
+              {regenScriptMut.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> 대본 생성 중...</>
+              ) : (
+                <><Sparkles className="h-4 w-4" /> {script.length ? "대본 재생성" : "숏폼 대본 생성"}</>
+              )}
+            </Button>
+
+            {/* 대본 편집 */}
+            {script.length > 0 && (
+              <div className="space-y-2">
+                <Label>대본 (드래그로 순서 변경)</Label>
+                <div className="space-y-1.5">
+                  {script.map((line, i) => (
+                    <div
+                      key={i}
+                      className={`grid grid-cols-[20px_60px_1fr] gap-1.5 items-center ${dragIdx === i ? "opacity-40" : ""}`}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); if (dragIdx !== null) moveScript(dragIdx, i); setDragIdx(null); }}
+                    >
+                      <button
+                        type="button"
+                        draggable
+                        onDragStart={() => setDragIdx(i)}
+                        onDragEnd={() => setDragIdx(null)}
+                        className="h-9 grid place-items-center cursor-grab active:cursor-grabbing text-muted-foreground"
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </button>
+                      <Input value={line.time} onChange={(e) => updateScript(i, { time: e.target.value })} className="h-9 text-[11px] px-1.5" />
+                      <div className="space-y-1">
+                        <Input value={line.caption} onChange={(e) => updateScript(i, { caption: e.target.value })} placeholder="자막" className="h-8 text-xs" />
+                        <Input value={line.narration} onChange={(e) => updateScript(i, { narration: e.target.value })} placeholder="나레이션" className="h-8 text-xs" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => saveMut.mutate()} disabled={saveMut.isPending}>
+                    <Save className="h-3 w-3" /> 대본 저장
+                  </Button>
+                  <Button size="sm" className="flex-1" onClick={() => videoMut.mutate()} disabled={videoMut.isPending}>
+                    {videoMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Clapperboard className="h-3 w-3" />}{" "}
+                    영상 생성
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">대본 수정 후 "대본 저장" → "영상 생성" 순서로 반영됩니다.</p>
+              </div>
+            )}
+
+            {/* 영상 미리보기 */}
+            {videoUrl && (
+              <div className="space-y-2">
+                <Label>숏폼 미리보기</Label>
+                <video
+                  key={videoVersion}
+                  src={`${videoUrl}?v=${videoVersion}`}
+                  controls
+                  playsInline
+                  className="mx-auto aspect-[9/16] max-h-[420px] rounded-md border bg-black"
+                />
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -194,6 +194,20 @@ def update_video_url(content_id: str, url: str) -> None:
         conn.execute("UPDATE content SET video_url = ? WHERE id = ?", (url, content_id))
 
 
+def update_content_script(content_id: str, script: list[dict]) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE content SET script_json = ? WHERE id = ?",
+            (json.dumps(script, ensure_ascii=False), content_id),
+        )
+
+
+def delete_content(content_id: str) -> bool:
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM content WHERE id = ?", (content_id,))
+        return cur.rowcount > 0
+
+
 def update_platform_status(content_id: str, platform: str, status: str) -> None:
     with get_conn() as conn:
         row = conn.execute(

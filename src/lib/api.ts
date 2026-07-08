@@ -63,7 +63,8 @@ export interface GeneratePayload {
   keywords: string[];
   category: string;
   contentType: ContentType;
-  guideline: string; // 비우면 백엔드가 유형별 기본 가이드라인 사용
+  blogGuideline: string; // 블로그 글 전용 가이드라인 (비우면 기본값)
+  shortsGuideline: string; // 숏폼 대본 전용 가이드라인 (비우면 기본값)
   scriptStyle: ScriptStyle; // 숏폼 대본 말투
   captionStyle: CaptionStyle; // 숏폼 자막 스타일
   requiredHashtags: string[];
@@ -121,7 +122,8 @@ export interface ContentSettings {
   keywords: string[];
   category: string;
   contentType: ContentType;
-  guideline: string;
+  blogGuideline: string;
+  shortsGuideline: string;
   scriptStyle: ScriptStyle;
   captionStyle: CaptionStyle;
   requiredHashtags: string[];
@@ -135,8 +137,20 @@ export async function getContentSettings(id: string) {
   return data as ContentSettings;
 }
 
-export async function regenerateContent(id: string, payload: GeneratePayload) {
-  const { data } = await api.post(`/api/content/${id}/regenerate`, payload, {
+export async function deleteContent(id: string) {
+  const { data } = await api.delete(`/api/content/${id}`);
+  return data as { ok: boolean };
+}
+
+export async function regenerateBlog(id: string, payload: GeneratePayload) {
+  const { data } = await api.post(`/api/content/${id}/regenerate-blog`, payload, {
+    timeout: 120000,
+  });
+  return data as GeneratedContent;
+}
+
+export async function regenerateScript(id: string, payload: GeneratePayload) {
+  const { data } = await api.post(`/api/content/${id}/regenerate-script`, payload, {
     timeout: 120000,
   });
   return data as GeneratedContent;
