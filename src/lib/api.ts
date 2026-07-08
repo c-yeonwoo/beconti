@@ -42,11 +42,20 @@ export const CATEGORIES = [
   "기타",
 ];
 
+export type ScriptStyle = "polite" | "cute" | "energetic";
+
+export const SCRIPT_STYLES: { value: ScriptStyle; label: string }[] = [
+  { value: "polite", label: "존댓말 (깔끔한 리뷰)" },
+  { value: "cute", label: "반말·귀여운 브이로그" },
+  { value: "energetic", label: "활기찬 반말 (텐션↑)" },
+];
+
 export interface GeneratePayload {
   keywords: string[];
   category: string;
   contentType: ContentType;
   guideline: string; // 비우면 백엔드가 유형별 기본 가이드라인 사용
+  scriptStyle: ScriptStyle; // 숏폼 대본 말투
   requiredHashtags: string[];
   placeName: string; // 매장명(상호) — 네이버 장소 카드(지도) 삽입용
   placeUrl: string; // (옵션) 네이버 지도 링크 — 있으면 우선
@@ -103,6 +112,7 @@ export interface ContentSettings {
   category: string;
   contentType: ContentType;
   guideline: string;
+  scriptStyle: ScriptStyle;
   requiredHashtags: string[];
   placeName: string;
   placeUrl: string;

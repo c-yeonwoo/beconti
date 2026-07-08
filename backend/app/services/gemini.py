@@ -38,6 +38,13 @@ DEFAULT_GUIDELINE_VIDEO = """- 15~30초 세로 영상(9:16) 기준
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}
 _VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
 
+# 숏폼 대본(자막/나레이션) 말투 스타일
+SCRIPT_STYLES = {
+    "polite": "존댓말의 깔끔하고 친절한 리뷰 말투",
+    "cute": "반말로 귀엽고 다정하게, 브이로그 찍듯 친근한 말투 (예: '여기 진짜 맛있어!', '완전 내 취향이야ㅎㅎ')",
+    "energetic": "반말로 활기차고 텐션 높게, 숏폼 특유의 리듬감 있는 말투 (예: '이거 실화냐!', '무조건 가야 돼')",
+}
+
 
 def default_guideline(content_type: str) -> str:
     return DEFAULT_GUIDELINE_VIDEO if content_type == "vlog" else DEFAULT_GUIDELINE_BLOG
@@ -50,6 +57,7 @@ def _build_prompt(
     guideline: str,
     hashtags: list[str],
     has_video: bool,
+    script_style: str = "polite",
 ) -> str:
     kw = ", ".join(keywords) if keywords else "(없음)"
     tags = " ".join(hashtags) if hashtags else "(지정 없음)"
@@ -60,11 +68,13 @@ def _build_prompt(
         "**사진의 노출 순서와 위치를 직접 계획**하세요."
     )
     if has_video:
+        style_desc = SCRIPT_STYLES.get(script_style, SCRIPT_STYLES["polite"])
         script_json = '  "script": [\n    {{"time": "0-3s", "caption": "자막(짧게)", "narration": "나레이션"}}\n  ]'
         script_rule = (
             "- 첨부 이미지 중 일부는 **영상에서 추출한 장면**입니다. 영상 내용을 실제로 반영해 작성하세요.\n"
             "- 첨부된 영상을 편집한 **30초 이상** 숏폼용으로 script 를 8~12줄 작성 "
-            "(배경음+자막 전제). caption/narration 에 이모지 금지."
+            "(배경음+자막 전제). caption/narration 에 이모지 금지.\n"
+            f"- **script 의 caption/narration 말투**: {style_desc}"
         )
     else:
         script_json = '  "script": []'
@@ -148,6 +158,7 @@ def generate_draft(
     guideline: str = "",
     hashtags: list[str] | None = None,
     has_video: bool = False,
+    script_style: str = "polite",
 ) -> dict:
     """이미지 경로 + 생성 옵션 → {title, body, script[]} dict 반환.
 
@@ -190,7 +201,9 @@ def generate_draft(
             mime = "image/jpeg" if suffix in {"jpg", "jpeg"} else f"image/{suffix}"
             parts.append(types.Part.from_bytes(data=data, mime_type=mime))
         parts.append(
-            _build_prompt(keywords, category, content_type, guideline, hashtags, has_video)
+            _build_prompt(
+                keywords, category, content_type, guideline, hashtags, has_video, script_style
+            )
         )
 
         config = types.GenerateContentConfig(

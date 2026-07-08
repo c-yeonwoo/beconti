@@ -36,6 +36,7 @@ def _gen_params(payload: GeneratePayload) -> dict:
         "requiredHashtags": payload.requiredHashtags,
         "placeName": payload.placeName,
         "placeUrl": payload.placeUrl,
+        "scriptStyle": payload.scriptStyle,
     }
 
 
@@ -85,6 +86,7 @@ def get_settings(content_id: str) -> dict:
         "requiredHashtags": gp.get("requiredHashtags", []),
         "placeName": gp.get("placeName", ""),
         "placeUrl": gp.get("placeUrl", ""),
+        "scriptStyle": gp.get("scriptStyle", "polite"),
         "media": [{"mediaId": m["id"], "url": _media_url(m["path"])} for m in infos],
     }
 
@@ -109,6 +111,7 @@ def regenerate(content_id: str, payload: GeneratePayload) -> GeneratedContent:
         guideline=payload.guideline,
         hashtags=payload.requiredHashtags,
         has_video=media_has_video(media),
+        script_style=payload.scriptStyle,
     )
     script = [
         ScriptLine(

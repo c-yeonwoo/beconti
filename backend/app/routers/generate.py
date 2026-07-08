@@ -36,6 +36,7 @@ def generate(payload: GeneratePayload) -> GeneratedContent:
         guideline=payload.guideline,
         hashtags=payload.requiredHashtags,
         has_video=media_has_video(paths),
+        script_style=payload.scriptStyle,
     )
 
     script = [
@@ -70,4 +71,5 @@ def _gen_params(payload: GeneratePayload) -> dict:
         "requiredHashtags": payload.requiredHashtags,
         "placeName": payload.placeName,
         "placeUrl": payload.placeUrl,
+        "scriptStyle": payload.scriptStyle,
     }

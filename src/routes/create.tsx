@@ -36,7 +36,9 @@ import {
   checkCompliance,
   getDefaults,
   CATEGORIES,
+  SCRIPT_STYLES,
   type ContentType,
+  type ScriptStyle,
   type GeneratedContent,
   type ScriptLine,
   type ComplianceResult,
@@ -66,6 +68,7 @@ function CreatePage() {
   const [placeName, setPlaceName] = useState("");
   const [placeUrl, setPlaceUrl] = useState("");
   const [contentType, setContentType] = useState<ContentType>("place_review");
+  const [scriptStyle, setScriptStyle] = useState<ScriptStyle>("polite");
   const [hashtagInput, setHashtagInput] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [guideline, setGuideline] = useState("");
@@ -85,6 +88,7 @@ function CreatePage() {
         category,
         contentType,
         guideline,
+        scriptStyle,
         requiredHashtags: hashtags,
         placeName,
         placeUrl,
@@ -322,6 +326,25 @@ function CreatePage() {
                     <SelectItem value="vlog">브이로그 (영상 중심)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>숏폼 대본 말투</Label>
+                <Select value={scriptStyle} onValueChange={(v) => setScriptStyle(v as ScriptStyle)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SCRIPT_STYLES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  영상 첨부 시 자막·나레이션 말투에 적용됩니다.
+                </p>
               </div>
 
               <div className="space-y-2">

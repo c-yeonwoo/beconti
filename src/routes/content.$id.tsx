@@ -25,7 +25,9 @@ import {
   uploadMedia,
   getDefaults,
   CATEGORIES,
+  SCRIPT_STYLES,
   type ContentType,
+  type ScriptStyle,
   type ScriptLine,
 } from "@/lib/api";
 
@@ -56,6 +58,7 @@ function ContentDetailPage() {
   const [kwInput, setKwInput] = useState("");
   const [category, setCategory] = useState("");
   const [contentType, setContentType] = useState<ContentType>("place_review");
+  const [scriptStyle, setScriptStyle] = useState<ScriptStyle>("polite");
   const [guideline, setGuideline] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
@@ -83,6 +86,7 @@ function ContentDetailPage() {
       setKeywords(s.keywords);
       setCategory(s.category);
       setContentType(s.contentType);
+      setScriptStyle(s.scriptStyle);
       setGuideline(s.guideline);
       setHashtags(s.requiredHashtags);
       setPlaceName(s.placeName);
@@ -108,6 +112,7 @@ function ContentDetailPage() {
         category,
         contentType,
         guideline,
+        scriptStyle,
         requiredHashtags: hashtags,
         placeName,
         placeUrl,
@@ -259,6 +264,18 @@ function ContentDetailPage() {
                   <SelectItem value="place_review">장소 리뷰</SelectItem>
                   <SelectItem value="product_review">제품 리뷰</SelectItem>
                   <SelectItem value="vlog">브이로그 (영상 중심)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>숏폼 대본 말투</Label>
+              <Select value={scriptStyle} onValueChange={(v) => setScriptStyle(v as ScriptStyle)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SCRIPT_STYLES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
