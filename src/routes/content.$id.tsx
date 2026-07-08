@@ -26,8 +26,10 @@ import {
   getDefaults,
   CATEGORIES,
   SCRIPT_STYLES,
+  CAPTION_STYLES,
   type ContentType,
   type ScriptStyle,
+  type CaptionStyle,
   type ScriptLine,
 } from "@/lib/api";
 
@@ -59,6 +61,7 @@ function ContentDetailPage() {
   const [category, setCategory] = useState("");
   const [contentType, setContentType] = useState<ContentType>("place_review");
   const [scriptStyle, setScriptStyle] = useState<ScriptStyle>("polite");
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("basic");
   const [guideline, setGuideline] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
@@ -67,6 +70,7 @@ function ContentDetailPage() {
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [videoVersion, setVideoVersion] = useState(0); // 재생성 시 캐시 무효화용
+  const [preview, setPreview] = useState<"shorts" | "blog">("blog");
 
   const guidelinePlaceholder =
     (contentType === "vlog" ? defaultsQ.data?.video : defaultsQ.data?.blog) ??
@@ -88,6 +92,7 @@ function ContentDetailPage() {
       setCategory(s.category);
       setContentType(s.contentType);
       setScriptStyle(s.scriptStyle);
+      setCaptionStyle(s.captionStyle);
       setGuideline(s.guideline);
       setHashtags(s.requiredHashtags);
       setPlaceName(s.placeName);
@@ -114,6 +119,7 @@ function ContentDetailPage() {
         contentType,
         guideline,
         scriptStyle,
+        captionStyle,
         requiredHashtags: hashtags,
         placeName,
         placeUrl,
@@ -282,6 +288,19 @@ function ContentDetailPage() {
               </Select>
             </div>
 
+            <div className="space-y-2">
+              <Label>숏폼 자막 스타일</Label>
+              <Select value={captionStyle} onValueChange={(v) => setCaptionStyle(v as CaptionStyle)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CAPTION_STYLES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">변경 후 "숏폼 영상 생성"을 다시 눌러 반영.</p>
+            </div>
+
             <ChipField label="필수 해시태그" items={hashtags} setItems={setHashtags} value={tagInput} setValue={setTagInput} placeholder="예: 성수동카페" hash />
 
             <div className="space-y-2">
@@ -306,25 +325,48 @@ function ContentDetailPage() {
 
         {/* 결과 (수동 편집) */}
         <div className="lg:col-span-2 space-y-6">
-          {contentQ.data.videoUrl && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">숏폼 미리보기</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  발행 전 확인용. 자막·대본 수정 후 상단 "숏폼 영상 생성"을 다시 누르면 갱신됩니다.
-                </p>
-              </CardHeader>
-              <CardContent>
-                <video
-                  key={videoVersion}
-                  src={`${contentQ.data.videoUrl}?v=${videoVersion}`}
-                  controls
-                  playsInline
-                  className="mx-auto aspect-[9/16] max-h-[520px] rounded-md border bg-black"
-                />
-              </CardContent>
-            </Card>
-          )}
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-base">미리보기 (발행 전 확인)</CardTitle>
+              <div className="flex gap-0.5 rounded-lg border p-0.5 bg-muted/40">
+                <button
+                  onClick={() => setPreview("blog")}
+                  className={`px-3 py-1 text-sm rounded-md transition ${
+                    preview === "blog" ? "bg-background shadow font-medium" : "text-muted-foreground"
+                  }`}
+                >
+                  블로그
+                </button>
+                <button
+                  onClick={() => setPreview("shorts")}
+                  className={`px-3 py-1 text-sm rounded-md transition ${
+                    preview === "shorts" ? "bg-background shadow font-medium" : "text-muted-foreground"
+                  }`}
+                >
+                  숏폼
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {preview === "shorts" ? (
+                contentQ.data.videoUrl ? (
+                  <video
+                    key={videoVersion}
+                    src={`${contentQ.data.videoUrl}?v=${videoVersion}`}
+                    controls
+                    playsInline
+                    className="mx-auto aspect-[9/16] max-h-[560px] rounded-md border bg-black"
+                  />
+                ) : (
+                  <div className="text-center text-sm text-muted-foreground py-16 border rounded-md">
+                    아직 숏폼 영상이 없습니다. 상단 <b>숏폼 영상 생성</b>을 눌러 만드세요.
+                  </div>
+                )
+              ) : (
+                <BlogPreview title={title} body={body} media={media} />
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader><CardTitle className="text-base">블로그 글</CardTitle></CardHeader>
@@ -385,6 +427,42 @@ function ContentDetailPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function BlogPreview({
+  title,
+  body,
+  media,
+}: {
+  title: string;
+  body: string;
+  media: MediaItem[];
+}) {
+  const lines = body.split("\n");
+  return (
+    <div className="max-h-[560px] overflow-y-auto rounded-md border p-5 bg-background space-y-3">
+      <h2 className="text-xl font-bold">{title || "(제목 없음)"}</h2>
+      {lines.map((raw, i) => {
+        const line = raw.trim();
+        if (!line) return <div key={i} className="h-2" />;
+        const photo = line.match(/^\[사진\s*(\d+)\]$/);
+        if (photo) {
+          const idx = parseInt(photo[1], 10) - 1;
+          const m = media[idx];
+          return m ? (
+            <img key={i} src={m.url} alt="" className="rounded-md border max-h-72 w-auto mx-auto" />
+          ) : (
+            <div key={i} className="text-xs text-muted-foreground border rounded-md py-6 text-center bg-muted/30">
+              [사진 {photo[1]}] (사진 없음)
+            </div>
+          );
+        }
+        if (line.startsWith("## ")) return <h3 key={i} className="text-base font-semibold pt-1">{line.slice(3)}</h3>;
+        if (line.startsWith("# ")) return <h2 key={i} className="text-lg font-bold pt-1">{line.slice(2)}</h2>;
+        return <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap">{line.replace(/\*\*/g, "")}</p>;
+      })}
     </div>
   );
 }

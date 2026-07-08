@@ -37,8 +37,10 @@ import {
   getDefaults,
   CATEGORIES,
   SCRIPT_STYLES,
+  CAPTION_STYLES,
   type ContentType,
   type ScriptStyle,
+  type CaptionStyle,
   type GeneratedContent,
   type ScriptLine,
   type ComplianceResult,
@@ -69,6 +71,7 @@ function CreatePage() {
   const [placeUrl, setPlaceUrl] = useState("");
   const [contentType, setContentType] = useState<ContentType>("place_review");
   const [scriptStyle, setScriptStyle] = useState<ScriptStyle>("polite");
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>("basic");
   const [hashtagInput, setHashtagInput] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [guideline, setGuideline] = useState("");
@@ -89,6 +92,7 @@ function CreatePage() {
         contentType,
         guideline,
         scriptStyle,
+        captionStyle,
         requiredHashtags: hashtags,
         placeName,
         placeUrl,
@@ -345,6 +349,22 @@ function CreatePage() {
                 <p className="text-xs text-muted-foreground">
                   영상 첨부 시 자막·나레이션 말투에 적용됩니다.
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>숏폼 자막 스타일</Label>
+                <Select value={captionStyle} onValueChange={(v) => setCaptionStyle(v as CaptionStyle)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CAPTION_STYLES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">

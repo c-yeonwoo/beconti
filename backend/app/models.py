@@ -28,6 +28,7 @@ class GeneratePayload(BaseModel):
     contentType: str = "place_review"     # 유형: place_review | product_review | vlog
     guideline: str = ""                   # 붙여넣은 가이드라인. 비면 유형별 기본값 사용
     scriptStyle: str = "polite"           # 숏폼 대본 말투: polite | cute | energetic
+    captionStyle: str = "basic"           # 숏폼 자막 스타일: basic | yellow | neon
     requiredHashtags: list[str] = []      # 필수 해시태그
     placeName: str = ""                   # 매장명(상호) — 네이버 장소 카드 삽입용
     placeUrl: str = ""                    # (옵션) 네이버 지도 링크. 있으면 우선, 없으면 매장명 검색

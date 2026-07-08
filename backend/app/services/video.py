@@ -56,18 +56,24 @@ def _parse_duration(time_str: str, default: float = 3.5) -> float:
     return default
 
 
-def _make_caption_png(text: str, out_path: str) -> None:
-    """자막 PNG(투명 배경, 흰 글씨 + 반투명 검정 박스) 생성 — 한글 안정 렌더."""
-    from PIL import Image, ImageDraw, ImageFont
+# 자막 스타일: (글자크기, 글자색, 외곽선색, 외곽선두께, 박스색 or None, 글로우색 or None)
+CAPTION_STYLES = {
+    "basic": (58, (255, 255, 255, 255), (0, 0, 0, 255), 6, (0, 0, 0, 150), None),
+    "yellow": (72, (255, 231, 64, 255), (0, 0, 0, 255), 12, None, None),
+    "neon": (68, (176, 255, 92, 255), (10, 40, 10, 255), 10, None, (120, 255, 90, 200)),
+}
 
-    img = Image.new("RGBA", (W, 400), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+
+def _make_caption_png(text: str, out_path: str, style: str = "basic") -> None:
+    """자막 PNG(투명 배경) 생성. style: basic | yellow | neon."""
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+    size, fill, stroke, stroke_w, box, glow = CAPTION_STYLES.get(style, CAPTION_STYLES["basic"])
     font_path = _font_path()
-    font = ImageFont.truetype(font_path, 58) if font_path else ImageFont.load_default()
+    font = ImageFont.truetype(font_path, size) if font_path else ImageFont.load_default()
 
-    text = _strip_emoji(text)  # 자막에서 깨지는 이모지 제거
-    # 단순 줄바꿈 (글자수 기준)
-    max_chars = 16
+    text = _strip_emoji(text)
+    max_chars = max(10, int(16 * 58 / size))
     words = text.split()
     lines, cur = [], ""
     for w in words:
@@ -80,21 +86,41 @@ def _make_caption_png(text: str, out_path: str) -> None:
         lines.append(cur.strip())
     lines = lines[:3] or [""]
 
-    line_h = 76
+    line_h = int(size * 1.32)
     total_h = line_h * len(lines)
-    y0 = (400 - total_h) // 2
+    canvas_h = max(400, total_h + 60)
+    img = Image.new("RGBA", (W, canvas_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    y0 = (canvas_h - total_h) // 2
+
+    def _pos(line):
+        bbox = draw.textbbox((0, 0), line, font=font, stroke_width=stroke_w)
+        return (W - (bbox[2] - bbox[0])) // 2
+
+    # 박스 스타일
+    if box:
+        for i, line in enumerate(lines):
+            x, y = _pos(line), y0 + i * line_h
+            bbox = draw.textbbox((0, 0), line, font=font)
+            tw = bbox[2] - bbox[0]
+            draw.rounded_rectangle(
+                [x - 20, y - 6, x + tw + 20, y + line_h - 10], radius=14, fill=box
+            )
+
+    # 네온 글로우 (별도 레이어 블러 후 합성)
+    if glow:
+        gl = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        gd = ImageDraw.Draw(gl)
+        for i, line in enumerate(lines):
+            gd.text((_pos(line), y0 + i * line_h), line, font=font, fill=glow,
+                    stroke_width=stroke_w + 6, stroke_fill=glow)
+        gl = gl.filter(ImageFilter.GaussianBlur(10))
+        img.alpha_composite(gl)
+
+    # 본 텍스트 (외곽선 + 채움)
     for i, line in enumerate(lines):
-        bbox = draw.textbbox((0, 0), line, font=font)
-        tw = bbox[2] - bbox[0]
-        x = (W - tw) // 2
-        y = y0 + i * line_h
-        # 반투명 박스
-        pad = 16
-        draw.rectangle([x - pad, y - 8, x + tw + pad, y + line_h - 12], fill=(0, 0, 0, 140))
-        # 외곽선 + 흰 글씨
-        for dx, dy in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
-            draw.text((x + dx, y + dy), line, font=font, fill=(0, 0, 0, 255))
-        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+        draw.text((_pos(line), y0 + i * line_h), line, font=font,
+                  fill=fill, stroke_width=stroke_w, stroke_fill=stroke)
     img.save(out_path)
 
 
@@ -247,7 +273,9 @@ def _mix_audio(video_in: str, narration: list[tuple[str, float]], bgm: str | Non
     )
 
 
-def render_from_videos(video_paths: list[str], script: list[dict], out_path: str) -> str:
+def render_from_videos(
+    video_paths: list[str], script: list[dict], out_path: str, caption_style: str = "basic"
+) -> str:
     """실촬영 영상 → 9:16 정규화·이어붙이기 + 자막 + (TTS 내레이션 + 배경음) 믹스."""
     from . import tts
 
@@ -280,7 +308,7 @@ def render_from_videos(video_paths: list[str], script: list[dict], out_path: str
                 continue
             n_png += 1
             png = str(tmpd / f"cap_{i}.png")
-            _make_caption_png(cap, png)
+            _make_caption_png(cap, png, caption_style)
             overlay_inputs += ["-i", png]
             s, e = i * win, (i + 1) * win
             nxt = f"v{n_png}"
@@ -321,12 +349,14 @@ def render_from_videos(video_paths: list[str], script: list[dict], out_path: str
     return out_path
 
 
-def render_ffmpeg(image_paths: list[str], script: list[dict], out_path: str) -> str:
+def render_ffmpeg(
+    image_paths: list[str], script: list[dict], out_path: str, caption_style: str = "basic"
+) -> str:
     """FFmpeg 로 9:16 숏폼 생성. 영상이 있으면 영상 편집, 없으면 사진 슬라이드쇼."""
     videos = [p for p in image_paths if Path(p).suffix.lower() in VIDEO_EXTS]
     if videos:
         # 실촬영 영상 우선 (체험단 클립 규칙: 사진 편집 영상 불가)
-        return render_from_videos(videos, script, out_path)
+        return render_from_videos(videos, script, out_path, caption_style)
 
     images = [p for p in image_paths if Path(p).suffix.lower() in IMG_EXTS]
     if not images:
@@ -349,7 +379,7 @@ def render_ffmpeg(image_paths: list[str], script: list[dict], out_path: str) -> 
         for i, line in enumerate(lines):
             img = norm[i % len(norm)]
             cap_png = str(tmpd / f"cap_{i}.png")
-            _make_caption_png(str(line.get("caption", "")), cap_png)
+            _make_caption_png(str(line.get("caption", "")), cap_png, caption_style)
             seg = str(tmpd / f"seg_{i}.mp4")
             _render_segment(img, cap_png, round(durations[i], 2), seg)
             segments.append(seg)
@@ -371,7 +401,8 @@ def render_creatomate(image_paths: list[str], script: list[dict], out_path: str)
 
 
 def render_shortform(
-    image_paths: list[str], script: list[dict], out_path: str, engine: str | None = None
+    image_paths: list[str], script: list[dict], out_path: str,
+    engine: str | None = None, caption_style: str = "basic",
 ) -> tuple[str, str]:
     """숏폼 생성. (출력경로, 사용엔진) 반환. Creatomate 우선, 실패 시 FFmpeg."""
     prefer = engine or ("creatomate" if settings.creatomate_api_key else "ffmpeg")
@@ -380,4 +411,4 @@ def render_shortform(
             return render_creatomate(image_paths, script, out_path), "creatomate"
         except Exception as e:  # noqa: BLE001
             print(f"Creatomate 실패 → FFmpeg fallback: {e}")
-    return render_ffmpeg(image_paths, script, out_path), "ffmpeg"
+    return render_ffmpeg(image_paths, script, out_path, caption_style), "ffmpeg"

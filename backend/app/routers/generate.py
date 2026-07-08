@@ -72,4 +72,5 @@ def _gen_params(payload: GeneratePayload) -> dict:
         "placeName": payload.placeName,
         "placeUrl": payload.placeUrl,
         "scriptStyle": payload.scriptStyle,
+        "captionStyle": payload.captionStyle,
     }
