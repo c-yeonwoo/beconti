@@ -323,7 +323,12 @@ async def open_for_login() -> None:
 
 
 async def _do_publish(page, frame, visibility: str) -> None:
-    """발행 패널 열기 → 공개범위 설정 → 최종 발행."""
+    """발행 패널 열기 → 공개범위 설정 → 최종 발행.
+
+    발행 확인 클릭 직후 창을 바로 닫으면(사진 업로드·서버처리 중) 실제 발행이
+    완료되지 않은 채 취소될 수 있다. URL 에 logNo(발행된 글 번호)가 붙는
+    시점까지 기다린 뒤 후처리 여유를 두고 반환한다.
+    """
     await frame.locator(SEL_PUBLISH_OPEN).first.click()
     await asyncio.sleep(random.uniform(1.2, 2.0))
 
@@ -335,7 +340,13 @@ async def _do_publish(page, frame, visibility: str) -> None:
         print(f"  ⚠️ 공개범위({visibility}) 설정 실패 — 기본값으로 진행")
 
     await frame.locator(SEL_PUBLISH_CONFIRM).first.click()
-    await asyncio.sleep(random.uniform(2.5, 4.0))
+
+    # 발행 완료 신호(URL 에 logNo 부여 등) 대기 — 못 잡아도 후처리 여유는 준다.
+    try:
+        await page.wait_for_url(re.compile(r"logNo=|PostView"), timeout=15000)
+    except Exception:
+        pass
+    await asyncio.sleep(random.uniform(3.0, 5.0))
 
 
 async def publish_naver_blog(

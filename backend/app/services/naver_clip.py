@@ -125,6 +125,25 @@ async def upload_clip(
             print("   완료 후 이 터미널에서 Enter")
             print("=" * 56)
             await asyncio.get_event_loop().run_in_executor(None, input)
+
+            # 저장 성공 여부 검증: '클립 상세 정보' 모달이 아직 열려 있으면
+            # 필수항목 누락 등으로 저장이 안 된 것 → 성공으로 오판하지 않는다.
+            still_open = False
+            try:
+                still_open = await pg.get_by_text("클립 상세 정보", exact=True).first.is_visible(
+                    timeout=2000
+                )
+            except Exception:
+                still_open = False
+            await pg.screenshot(path=shot, full_page=True)
+
+            if still_open:
+                return ClipResult(
+                    False,
+                    "저장이 완료되지 않았습니다(모달이 아직 열려있음). "
+                    "카테고리 등 필수 항목을 채우고 저장을 다시 눌러주세요.",
+                    shot,
+                )
             return ClipResult(True, "반자동 업로드 완료(제목·설명·태그 자동 + 카테고리·저장 수동)", shot)
 
         except Exception as e:  # noqa: BLE001

@@ -50,9 +50,12 @@ function PublishPage() {
       publishContent(vars),
     onSuccess: (res, vars) => {
       qc.invalidateQueries({ queryKey: ["content"] });
+      const labels = vars.platforms
+        .map((k) => platforms.find((p) => p.key === k)?.label ?? k)
+        .join(", ");
       toast[res.ok ? "success" : "error"](
-        res.ok ? "발행 완료" : "일부 플랫폼 실패",
-        { description: vars.platforms.join(", ") },
+        res.ok ? "발행 완료" : "발행 실패/대기",
+        { description: labels },
       );
     },
     onError: (e: Error) =>
@@ -65,7 +68,7 @@ function PublishPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">배포 관리</h1>
           <p className="text-sm text-muted-foreground">
-            플랫폼별 발행 상태를 확인하고 실패한 항목을 재시도할 수 있습니다.
+            최초 발행은 전체 플랫폼 일괄, 이후 재발행은 플랫폼별로 각각 진행합니다.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
@@ -112,9 +115,15 @@ function PublishPage() {
                   </TableRow>
                 ) : (
                   rows.map((row: GeneratedContent) => {
-                    const hasFailed = platforms.some(
-                      (p) => row.platformStatus[p.key] === "failed",
+                    const allIdle = platforms.every(
+                      (p) => row.platformStatus[p.key] === "idle",
                     );
+                    const isPendingFor = (keys: Platform[]) =>
+                      publishMut.isPending &&
+                      publishMut.variables?.contentId === row.id &&
+                      publishMut.variables.platforms.length === keys.length &&
+                      publishMut.variables.platforms.every((k) => keys.includes(k));
+
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="font-medium max-w-[280px] truncate">
@@ -129,41 +138,58 @@ function PublishPage() {
                         <TableCell className="text-xs text-muted-foreground">
                           {new Date(row.createdAt).toLocaleString("ko-KR")}
                         </TableCell>
-                        {platforms.map((p) => (
-                          <TableCell key={p.key}>
-                            <StatusBadge status={row.platformStatus[p.key]} />
-                          </TableCell>
-                        ))}
-                        <TableCell className="text-right space-x-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={publishMut.isPending}
-                            onClick={() =>
-                              publishMut.mutate({
-                                contentId: row.id,
-                                platforms: platforms.map((p) => p.key),
-                              })
-                            }
-                          >
-                            <Send className="h-3 w-3" /> 발행
-                          </Button>
-                          {hasFailed && (
+                        {platforms.map((p) => {
+                          const status = row.platformStatus[p.key];
+                          const pending = isPendingFor([p.key]);
+                          return (
+                            <TableCell key={p.key}>
+                              <div className="flex items-center gap-1.5">
+                                <StatusBadge status={status} />
+                                {status !== "success" && (
+                                  <button
+                                    type="button"
+                                    disabled={publishMut.isPending}
+                                    onClick={() =>
+                                      publishMut.mutate({ contentId: row.id, platforms: [p.key] })
+                                    }
+                                    title={`${p.label} ${status === "idle" ? "발행" : "재발행"}`}
+                                    className="h-6 w-6 grid place-items-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40"
+                                  >
+                                    {pending ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </TableCell>
+                          );
+                        })}
+                        <TableCell className="text-right">
+                          {allIdle ? (
                             <Button
                               size="sm"
-                              variant="ghost"
+                              variant="outline"
                               disabled={publishMut.isPending}
                               onClick={() =>
                                 publishMut.mutate({
                                   contentId: row.id,
-                                  platforms: platforms
-                                    .filter((p) => row.platformStatus[p.key] === "failed")
-                                    .map((p) => p.key),
+                                  platforms: platforms.map((p) => p.key),
                                 })
                               }
                             >
-                              <RefreshCw className="h-3 w-3" /> 재시도
+                              {isPendingFor(platforms.map((p) => p.key)) ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <Send className="h-3 w-3" />
+                              )}{" "}
+                              최초 발행(전체)
                             </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              플랫폼별 버튼으로 재발행
+                            </span>
                           )}
                         </TableCell>
                       </TableRow>
