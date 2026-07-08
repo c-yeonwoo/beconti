@@ -226,34 +226,38 @@ def detect_scene_cuts(video_path: str, threshold: float = 0.35) -> list[float]:
 
 
 def build_scene_segments(
-    duration: float, video_path: str, min_seg: float = 1.5, max_segments: int = 10
+    duration: float, video_path: str, min_seg: float = 3.0, max_seg: float = 5.5
 ) -> list[tuple[float, float]]:
-    """실제 화면전환 시점 기준으로 (start, end) 구간을 만든다.
+    """나레이션이 여유 있게(약 3~5초) 들어갈 구간을 만든다.
 
-    여러 threshold 로 시도해 구간 수가 영상 길이에 맞는 자연스러운 범위에 들어오면
-    채택하고, 감지가 애매하면(컷이 거의 없거나 너무 많으면) 길이 기반 균등분할로 폴백한다.
+    모든 화면전환마다 끊지 않는다 — 장면전환 시점을 "괜찮은 끊는 지점" 후보로만
+    쓰고, 목표 길이(min~max) 범위 안에 후보가 있으면 그 지점에서 끊어 자연스럽게
+    이어지도록 하고, 없으면 목표 길이에서 그냥 자른다. 구간 길이가 고르므로
+    나레이션 배속 편차(짧은 구간 때문에 확 빨라지는 문제)도 줄어든다.
     """
     if duration <= 0:
         return [(0.0, MIN_TOTAL_SEC)]
-    target_n = max(3, min(max_segments, round(duration / 4.0)))
-    lo, hi = max(3, target_n - 2), min(max_segments, target_n + 3)
 
-    for threshold in (0.35, 0.25, 0.45, 0.2, 0.55, 0.15):
-        cuts = detect_scene_cuts(video_path, threshold)
-        bounds = sorted({0.0, duration} | {c for c in cuts if min_seg <= c <= duration - min_seg})
-        pruned = [bounds[0]]
-        for b in bounds[1:]:
-            if b - pruned[-1] >= min_seg:
-                pruned.append(b)
-        if pruned[-1] != duration:
-            pruned[-1] = duration
-        n = len(pruned) - 1
-        if lo <= n <= hi:
-            return [(pruned[i], pruned[i + 1]) for i in range(n)]
+    candidates: set[float] = set()
+    for threshold in (0.3, 0.4, 0.5):
+        candidates.update(detect_scene_cuts(video_path, threshold))
+    cuts = sorted(c for c in candidates if 0 < c < duration)
 
-    # 폴백: 장면 감지가 애매함 → 영상 길이 기반 균등분할(고정 개수 아님)
-    step = duration / target_n
-    return [(i * step, (i + 1) * step) for i in range(target_n)]
+    segments: list[tuple[float, float]] = []
+    start = 0.0
+    target = (min_seg + max_seg) / 2
+    while start < duration - 0.5:
+        window = [c for c in cuts if start + min_seg <= c <= start + max_seg]
+        if window:
+            end = min(window, key=lambda c: abs(c - (start + target)))
+        else:
+            end = min(start + max_seg, duration)
+        if duration - end < min_seg:  # 마지막 자투리는 직전 구간에 합침
+            end = duration
+        segments.append((start, end))
+        start = end
+
+    return segments or [(0.0, duration)]
 
 
 def compute_script_segments(video_paths: list[str]) -> list[dict]:
