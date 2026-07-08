@@ -34,6 +34,8 @@ class Settings:
         self.typecast_api_key = os.getenv("TYPECAST_API_KEY", "").strip()
         self.typecast_voice_id = os.getenv("TYPECAST_VOICE_ID", "").strip()
         self.typecast_model = os.getenv("TYPECAST_MODEL", "ssfm-v30").strip() or "ssfm-v30"
+        # 나레이션 배속 (겹침/짤림 방지). 1.0=기본속도, 1.2=20% 빠르게
+        self.tts_tempo = float(os.getenv("TTS_TEMPO", "1.2") or 1.2)
 
         self.data_dir = Path(os.getenv("DATA_DIR", "./data")).expanduser().resolve()
         self.upload_dir = self.data_dir / "uploads"

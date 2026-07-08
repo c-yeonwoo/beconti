@@ -243,6 +243,37 @@ def _find_bgm() -> str | None:
     return None
 
 
+def _speed_audio(in_path: str, factor: float, out_path: str) -> None:
+    """오디오를 factor 배속으로. ffmpeg atempo 는 1개당 0.5~2.0 범위라 필요시 체인."""
+    factor = max(0.5, min(factor, 4.0))
+    filters, f = [], factor
+    while f > 2.0:
+        filters.append("atempo=2.0")
+        f /= 2.0
+    while f < 0.5:
+        filters.append("atempo=0.5")
+        f /= 0.5
+    filters.append(f"atempo={f:.4f}")
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", in_path, "-filter:a", ",".join(filters), out_path],
+        check=True, capture_output=True,
+    )
+
+
+def _fit_narration_to_window(mp3_path: str, window: float, tmp_dir: Path, tag: str) -> str:
+    """나레이션이 배정된 시간창보다 길면 추가 가속해 창 안에 맞춘다 (겹침/짤림 방지)."""
+    dur = _probe_duration(mp3_path)
+    target = window * 0.92  # 다음 줄과 약간의 여유
+    if dur <= 0 or dur <= target:
+        return mp3_path
+    fitted = str(tmp_dir / f"tts_fit_{tag}.mp3")
+    try:
+        _speed_audio(mp3_path, dur / target, fitted)
+        return fitted
+    except Exception:  # noqa: BLE001
+        return mp3_path
+
+
 def _mix_audio(video_in: str, narration: list[tuple[str, float]], bgm: str | None,
                duration: float, out_path: str) -> None:
     """영상(자막 포함)에 나레이션 TTS + 배경음 + 원본소리(약하게)를 믹스."""
@@ -327,6 +358,7 @@ def render_from_videos(
             capped = base
 
         # 2) 나레이션 TTS (라인별, 자막과 같은 시간창 시작점)
+        # 시간창보다 길면 추가 가속해 다음 줄과 겹치거나 끝에서 잘리지 않게 맞춘다.
         narration: list[tuple[str, float]] = []
         if tts.is_enabled():
             for i, line in enumerate(lines):
@@ -335,6 +367,7 @@ def render_from_videos(
                     continue
                 mp3 = str(tmpd / f"tts_{i}.mp3")
                 if tts.synthesize(txt, mp3):
+                    mp3 = _fit_narration_to_window(mp3, win, tmpd, str(i))
                     narration.append((mp3, i * win))
 
         # 3) 배경음 + 믹스

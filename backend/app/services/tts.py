@@ -26,8 +26,10 @@ def list_voices() -> list[dict]:
     return r.json()
 
 
-def synthesize(text: str, out_path: str, voice_id: str | None = None) -> str | None:
-    """text → mp3 파일. 키/보이스 없으면 None."""
+def synthesize(
+    text: str, out_path: str, voice_id: str | None = None, tempo: float | None = None
+) -> str | None:
+    """text → mp3 파일. 키/보이스 없으면 None. tempo 기본은 settings.tts_tempo(겹침/짤림 방지)."""
     text = (text or "").strip()
     if not text or not settings.typecast_api_key:
         return None
@@ -35,12 +37,15 @@ def synthesize(text: str, out_path: str, voice_id: str | None = None) -> str | N
     if not vid:
         return None
 
+    tempo = tempo if tempo is not None else settings.tts_tempo
+    tempo = max(0.5, min(2.0, tempo))
+
     payload = {
         "voice_id": vid,
         "text": text[:2000],
         "model": settings.typecast_model,
         "language": "kor",
-        "output": {"audio_format": "mp3", "volume": 100, "audio_tempo": 1.0},
+        "output": {"audio_format": "mp3", "volume": 100, "audio_tempo": tempo},
     }
     headers = {"X-API-KEY": settings.typecast_api_key, "Content-Type": "application/json"}
 
