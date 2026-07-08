@@ -180,17 +180,59 @@ def _normalize_video(path: str, out_path: str) -> str:
     return out_path
 
 
+def _find_bgm() -> str | None:
+    """data/bgm/ 에 있는 첫 음원 파일. 없으면 None."""
+    if not settings.bgm_dir.exists():
+        return None
+    for f in sorted(settings.bgm_dir.iterdir()):
+        if f.suffix.lower() in {".mp3", ".wav", ".m4a", ".aac", ".ogg"}:
+            return str(f)
+    return None
+
+
+def _mix_audio(video_in: str, narration: list[tuple[str, float]], bgm: str | None,
+               duration: float, out_path: str) -> None:
+    """영상(자막 포함)에 나레이션 TTS + 배경음 + 원본소리(약하게)를 믹스."""
+    inputs = ["-i", video_in]
+    filt = [f"[0:a]volume={settings.orig_audio_volume}[oa]"]
+    labels = ["[oa]"]
+    idx = 1
+    for mp3, start in narration:
+        inputs += ["-i", mp3]
+        ms = max(int(start * 1000), 0)
+        filt.append(f"[{idx}:a]adelay={ms}|{ms},volume={settings.narration_volume}[n{idx}]")
+        labels.append(f"[n{idx}]")
+        idx += 1
+    if bgm:
+        inputs += ["-stream_loop", "-1", "-i", bgm]
+        filt.append(
+            f"[{idx}:a]volume={settings.bgm_volume},atrim=0:{duration:.2f},"
+            f"asetpts=PTS-STARTPTS[bg]"
+        )
+        labels.append("[bg]")
+        idx += 1
+    filt.append(f"{''.join(labels)}amix=inputs={len(labels)}:duration=longest:normalize=0[aout]")
+    subprocess.run(
+        ["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(filt),
+         "-map", "0:v", "-map", "[aout]",
+         "-c:v", "copy", "-c:a", "aac", "-t", f"{duration:.2f}", out_path],
+        check=True, capture_output=True,
+    )
+
+
 def render_from_videos(video_paths: list[str], script: list[dict], out_path: str) -> str:
-    """실촬영 영상들을 9:16 로 정규화·이어붙이고, 대본 자막을 시간대별로 새겨넣는다."""
+    """실촬영 영상 → 9:16 정규화·이어붙이기 + 자막 + (TTS 내레이션 + 배경음) 믹스."""
+    from . import tts
+
+    lines = script or []
     with tempfile.TemporaryDirectory() as tmp:
         tmpd = Path(tmp)
         norm = [_normalize_video(v, str(tmpd / f"nv_{j}.mp4")) for j, v in enumerate(video_paths)]
 
         # 이어붙이기 (동일 코덱이라 copy 가능)
-        base = str(tmpd / "base.mp4")
-        if len(norm) == 1:
-            base = norm[0]
-        else:
+        base = norm[0]
+        if len(norm) > 1:
+            base = str(tmpd / "base.mp4")
             lst = tmpd / "list.txt"
             lst.write_text("".join(f"file '{s}'\n" for s in norm))
             subprocess.run(
@@ -199,39 +241,56 @@ def render_from_videos(video_paths: list[str], script: list[dict], out_path: str
             )
 
         Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-        captions = [_strip_emoji(str(l.get("caption", ""))) for l in (script or [])]
-        captions = [c for c in captions if c]
-
-        if not captions:
-            subprocess.run(["ffmpeg", "-y", "-i", base, "-c", "copy", out_path],
-                           check=True, capture_output=True)
-            return out_path
-
-        # 자막을 총 길이에 걸쳐 균등 배분해 오버레이
         dur = _probe_duration(base) or MIN_TOTAL_SEC
-        win = dur / len(captions)
-        inputs = ["-i", base]
-        for i, cap in enumerate(captions):
+        win = dur / max(len(lines), 1)
+
+        # 1) 자막 오버레이 (라인별 시간창)
+        capped = str(tmpd / "capped.mp4")
+        overlay_inputs, chains, cur, n_png = ["-i", base], [], "0:v", 0
+        for i, line in enumerate(lines):
+            cap = _strip_emoji(str(line.get("caption", "")))
+            if not cap:
+                continue
+            n_png += 1
             png = str(tmpd / f"cap_{i}.png")
             _make_caption_png(cap, png)
-            inputs += ["-i", png]
-
-        # [0:v][1:v]overlay=...:enable='between(t,s,e)'[v1]; [v1][2:v]overlay...[v2]...
-        chains, cur = [], "0:v"
-        for i in range(len(captions)):
+            overlay_inputs += ["-i", png]
             s, e = i * win, (i + 1) * win
-            nxt = f"v{i}"
+            nxt = f"v{n_png}"
             chains.append(
-                f"[{cur}][{i + 1}:v]overlay=(W-w)/2:H-h-180:enable='between(t,{s:.2f},{e:.2f})'[{nxt}]"
+                f"[{cur}][{n_png}:v]overlay=(W-w)/2:H-h-180:enable='between(t,{s:.2f},{e:.2f})'[{nxt}]"
             )
             cur = nxt
-        filt = ";".join(chains)
-        subprocess.run(
-            ["ffmpeg", "-y", *inputs, "-filter_complex", filt,
-             "-map", f"[{cur}]", "-map", "0:a?",
-             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", out_path],
-            check=True, capture_output=True,
-        )
+        if chains:
+            subprocess.run(
+                ["ffmpeg", "-y", *overlay_inputs, "-filter_complex", ";".join(chains),
+                 "-map", f"[{cur}]", "-map", "0:a?",
+                 "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", capped],
+                check=True, capture_output=True,
+            )
+        else:
+            capped = base
+
+        # 2) 나레이션 TTS (라인별, 자막과 같은 시간창 시작점)
+        narration: list[tuple[str, float]] = []
+        if tts.is_enabled():
+            for i, line in enumerate(lines):
+                txt = _strip_emoji(str(line.get("narration", "")))
+                if not txt:
+                    continue
+                mp3 = str(tmpd / f"tts_{i}.mp3")
+                if tts.synthesize(txt, mp3):
+                    narration.append((mp3, i * win))
+
+        # 3) 배경음 + 믹스
+        bgm = _find_bgm()
+        if not narration and not bgm:
+            if capped != out_path:
+                subprocess.run(["ffmpeg", "-y", "-i", capped, "-c", "copy", out_path],
+                               check=True, capture_output=True)
+            return out_path
+
+        _mix_audio(capped, narration, bgm, dur, out_path)
     return out_path
 
 

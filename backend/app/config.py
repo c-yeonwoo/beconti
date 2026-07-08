@@ -30,10 +30,21 @@ class Settings:
         self.creatomate_api_key = os.getenv("CREATOMATE_API_KEY", "").strip()
         self.creatomate_template_id = os.getenv("CREATOMATE_TEMPLATE_ID", "").strip()
 
+        # Typecast TTS (내레이션 음성). 키 없으면 TTS 생략
+        self.typecast_api_key = os.getenv("TYPECAST_API_KEY", "").strip()
+        self.typecast_voice_id = os.getenv("TYPECAST_VOICE_ID", "").strip()
+        self.typecast_model = os.getenv("TYPECAST_MODEL", "ssfm-v30").strip() or "ssfm-v30"
+
         self.data_dir = Path(os.getenv("DATA_DIR", "./data")).expanduser().resolve()
         self.upload_dir = self.data_dir / "uploads"
         self.render_dir = self.data_dir / "renders"
+        self.bgm_dir = self.data_dir / "bgm"  # 배경음악 파일을 여기 넣으면 자동 사용
         self.db_path = self.data_dir / "beconti.db"
+
+        # 오디오 믹스 볼륨 (0~1)
+        self.bgm_volume = float(os.getenv("BGM_VOLUME", "0.15") or 0.15)
+        self.narration_volume = float(os.getenv("NARRATION_VOLUME", "1.0") or 1.0)
+        self.orig_audio_volume = float(os.getenv("ORIG_AUDIO_VOLUME", "0.25") or 0.25)
 
         # 비어 있으면 자동화 전용 프로필(data/naver-profile) 사용 → 메인 크롬과 독립,
         # 여기 네이버 로그인을 1회만 해두면 세션이 유지된다.
@@ -51,6 +62,7 @@ class Settings:
     def ensure_dirs(self) -> None:
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.render_dir.mkdir(parents=True, exist_ok=True)
+        self.bgm_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache
